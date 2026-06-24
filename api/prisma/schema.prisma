@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  nowpayments
+  azteco
+}
+
+enum SubscriptionStatus {
+  active
+  pending
+  failed
+  expired
+}
+
+model User {
+  id                String         @id @default(cuid())
+  jellyfinUsername  String         @unique
+  jellyfinUserId    String?
+  plexUsername      String?
+  createdAt         DateTime       @default(now())
+  subscriptions     Subscription[]
+}
+
+model Plan {
+  id        String   @id
+  product   String
+  label     String
+  priceEur  Decimal  @map("price_eur") @db.Decimal(10, 2)
+  months    Int
+  popular   Boolean  @default(false)
+  icon      String
+  createdAt DateTime @default(now()) @map("created_at")
+}
+
+model AztecoOption {
+  id      String  @id @default(cuid())
+  product String
+  eur     Decimal @db.Decimal(10, 2)
+  days    Int
+
+  @@unique([product, eur])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  provider    Provider
+  providerRef String?  @map("provider_ref")
+  orderId     String   @unique @map("order_id")
+  coin        String?
+  amountEur   Decimal  @map("amount_eur") @db.Decimal(10, 2)
+  status      String
+  user        String
+  product     String
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+}
+
+model VoucherRedemption {
+  id        String   @id @default(cuid())
+  codeHash  String   @unique @map("code_hash")
+  status    String
+  valueEur  Decimal  @default(0) @map("value_eur") @db.Decimal(10, 2)
+  txRef     String?  @map("tx_ref")
+  user      String
+  product   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String             @map("user_id")
+  user      User               @relation(fields: [userId], references: [id])
+  plan      String
+  source    Provider
+  startsAt  DateTime           @map("starts_at")
+  expiresAt DateTime           @map("expires_at")
+  status    SubscriptionStatus
+}
+
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    Provider
+  eventId     String    @map("event_id")
+  payload     Json
+  processedAt DateTime? @map("processed_at")
+
+  @@unique([provider, eventId])
+}

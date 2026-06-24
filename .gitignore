@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+.repo.git
+.next
+dist
+web/.next
+api/dist
+.env
+.env.local
+coverage
+*.log
+api/prisma/dev.db
