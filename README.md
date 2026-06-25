@@ -8,7 +8,7 @@ Privacy-focused Jellyfin/Plex subscription payment portal with a Next.js fronten
 - Backend: Fastify, TypeScript, Prisma/PostgreSQL, BullMQ/Redis
 - Payments: NowPayments invoices/IPN, Azteco adapter with mock and real-client TODO boundary
 - Provisioning: jfa-go/Jellyfin expiry adapter, Plex invite adapter
-- Deployment: Docker Compose for web, api, postgres, redis, jfa-go
+- Deployment: Docker Compose for web, api, postgres, redis (jfa-go runs separately and is reached via `JFA_GO_BASE_URL`)
 
 Prisma is used because the payment/control-plane schema benefits from explicit migrations, generated types, and readable relational modeling.
 
@@ -24,7 +24,7 @@ Prisma is used because the payment/control-plane schema benefits from explicit m
 1. Copy `infra/.env.example` to `infra/.env` and fill provider secrets.
 2. Install dependencies with `npm install`.
 3. Generate Prisma client with `npm --workspace api run prisma:generate`.
-4. Start Postgres/Redis using `docker compose -f infra/docker-compose.yml up postgres redis jfa-go`.
+4. Start Postgres/Redis using `docker compose -f infra/docker-compose.yml up postgres redis`. (jfa-go is expected to run separately; set `JFA_GO_BASE_URL` to reach it.)
 5. Run migrations/seeds, then start dev services:
 
 ```bash

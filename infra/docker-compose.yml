@@ -34,7 +34,6 @@ services:
     depends_on:
       - postgres
       - redis
-      - jfa-go
 
   postgres:
     image: postgres:16-alpine
@@ -52,13 +51,8 @@ services:
     ports:
       - "6379:6379"
 
-  jfa-go:
-    image: hrfee/jfa-go:latest
-    ports:
-      - "8056:8056"
-    volumes:
-      - jfa_go_data:/data
+# jfa-go runs on a separate server and is not part of this stack.
+# Point the API at it via JFA_GO_BASE_URL in .env (e.g. http://your-jfa-go-host:8056).
 
 volumes:
   postgres_data:
-  jfa_go_data:
