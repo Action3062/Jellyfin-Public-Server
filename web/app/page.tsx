@@ -74,6 +74,20 @@ function formatCode(value: string) {
     .replace(/-$/, "");
 }
 
+// Maps the payment_status returned by /pay/api/nowpayments/status to a UI
+// status kind and localized text. Values mirror the NowPayments lifecycle.
+const paymentStatusInfo: Record<string, { kind: string; de: string; en: string }> = {
+  waiting: { kind: "checking", de: "Warte auf deine Zahlung …", en: "Waiting for your payment …" },
+  confirming: { kind: "checking", de: "Zahlung erkannt – wird im Netzwerk bestätigt …", en: "Payment detected – confirming on-chain …" },
+  confirmed: { kind: "checking", de: "Zahlung bestätigt – wird abgeschlossen …", en: "Payment confirmed – finalizing …" },
+  sending: { kind: "checking", de: "Zahlung wird verarbeitet …", en: "Payment is being processed …" },
+  partially_paid: { kind: "warning", de: "Teilzahlung erhalten – bitte Restbetrag senden.", en: "Partial payment received – please send the remaining amount." },
+  finished: { kind: "confirmed", de: "Zahlung abgeschlossen. Abo aktiviert!", en: "Payment complete. Subscription active!" },
+  failed: { kind: "error", de: "Zahlung fehlgeschlagen.", en: "Payment failed." },
+  expired: { kind: "error", de: "Invoice abgelaufen.", en: "Invoice expired." },
+  refunded: { kind: "error", de: "Zahlung erstattet.", en: "Payment refunded." }
+};
+
 export default function PaymentPage() {
   const [lang, setLang] = useState<"de" | "en">("de");
   const [tab, setTab] = useState<"crypto" | "azteco">("crypto");
@@ -88,6 +102,7 @@ export default function PaymentPage() {
   const [status, setStatus] = useState<{ kind: string; text: string }>({ kind: "info", text: "" });
   const [invoiceUrl, setInvoiceUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(false);
   const [code1, setCode1] = useState("");
   const [code2, setCode2] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -176,7 +191,8 @@ export default function PaymentPage() {
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "invoice failed");
       setInvoiceUrl(data.invoice_url);
-      setStatus({ kind: "info", text: lang === "de" ? "Invoice erstellt. Zahlungsstatus wird alle 30 Sekunden geprüft." : "Invoice created. Payment status checks every 30 seconds." });
+      setPending(true);
+      setStatus({ kind: "checking", text: lang === "de" ? "Warte auf deine Zahlung … (Status wird alle 30 s geprüft)" : "Waiting for your payment … (status checked every 30s)" });
       window.open(data.invoice_url, "_blank", "noopener,noreferrer");
 
       const started = Date.now();
@@ -184,21 +200,26 @@ export default function PaymentPage() {
       pollRef.current = setInterval(async () => {
         if (Date.now() - started > 60 * 60 * 1000) {
           if (pollRef.current) clearInterval(pollRef.current);
-          setStatus({ kind: "warning", text: lang === "de" ? "Polling nach 1 Stunde beendet." : "Polling stopped after 1 hour." });
+          setPending(false);
+          setStatus({ kind: "warning", text: lang === "de" ? "Statusprüfung nach 1 Stunde beendet. Bei offener Zahlung bitte den Support kontaktieren." : "Status checks stopped after 1 hour. If your payment is still pending, please contact support." });
           return;
         }
         const statusRes = await fetch(`${apiBase}/nowpayments/status/${data.invoice_id}`);
+        if (!statusRes.ok) return;
         const statusData = await statusRes.json();
-        const paymentStatus = statusData.payment_status;
+        const paymentStatus = String(statusData.payment_status || "waiting");
+        const info = paymentStatusInfo[paymentStatus];
         if (["finished", "confirmed", "completed"].includes(paymentStatus)) {
           if (pollRef.current) clearInterval(pollRef.current);
+          setPending(false);
           await maybeInvitePlex(plan.product);
           setStatus({ kind: "confirmed", text: lang === "de" ? "Zahlung bestätigt. Abo aktiviert." : "Payment confirmed. Subscription active." });
         } else if (["failed", "expired", "refunded"].includes(paymentStatus)) {
           if (pollRef.current) clearInterval(pollRef.current);
-          setStatus({ kind: "error", text: paymentStatus });
+          setPending(false);
+          setStatus({ kind: "error", text: info ? (lang === "de" ? info.de : info.en) : paymentStatus });
         } else {
-          setStatus({ kind: "checking", text: paymentStatus });
+          setStatus({ kind: info?.kind ?? "checking", text: info ? (lang === "de" ? info.de : info.en) : `Status: ${paymentStatus}` });
         }
       }, 30000);
     } catch (error) {
@@ -376,9 +397,11 @@ export default function PaymentPage() {
               </div>
             )}
 
-            <button className="primary" disabled={busy || !userConfirmed} onClick={tab === "crypto" ? payCrypto : redeemAzteco}>
-              {busy ? <span className="spinner" /> : <Lock size={18} />}
-              {tab === "crypto" ? (
+            <button className="primary" disabled={busy || pending || !userConfirmed} onClick={tab === "crypto" ? payCrypto : redeemAzteco}>
+              {busy || pending ? <span className="spinner" /> : <Lock size={18} />}
+              {pending ? (
+                <><span lang="de">Zahlung läuft …</span><span lang="en">Payment in progress …</span></>
+              ) : tab === "crypto" ? (
                 <><span lang="de">Mit Crypto bezahlen</span><span lang="en">Pay with crypto</span></>
               ) : (
                 <><span lang="de">Einlösen & Aktivieren</span><span lang="en">Redeem & activate</span></>
