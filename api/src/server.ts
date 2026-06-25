@@ -61,7 +61,7 @@ app.get("/pay/api/azteco/options", async () => aztecoOptions);
 
 app.post("/pay/api/user/check", async (request) => {
   const body = z.object({ username: z.string().min(1).max(80) }).parse(request.body);
-  return { exists: await checkJellyfinUser(body.username.trim()) };
+  return checkJellyfinUser(body.username.trim());
 });
 
 app.post("/pay/api/nowpayments/create", async (request, reply) => {

@@ -1,6 +1,14 @@
 import { config } from "../config.js";
+import { jellyfinConfigured, jellyfinUserExists } from "./jellyfin.js";
 
 type JfaUser = { id?: string; name?: string; username?: string };
+
+export type UserCheckResult = {
+  /** Whether a matching user exists. Only meaningful when `verified` is true. */
+  exists: boolean;
+  /** Whether the lookup was actually performed against a backend. */
+  verified: boolean;
+};
 
 async function jfaFetch(path: string, init: RequestInit = {}) {
   const res = await fetch(`${config.JFA_GO_BASE_URL}${path}`, {
@@ -15,11 +23,38 @@ async function jfaFetch(path: string, init: RequestInit = {}) {
   return res.json();
 }
 
-export async function checkJellyfinUser(username: string) {
-  if (!config.JFA_GO_TOKEN) return username.length >= 3;
-  const users = await jfaFetch("/users") as JfaUser[] | { users?: JfaUser[] };
+async function jfaUserExists(username: string) {
+  const users = (await jfaFetch("/users")) as JfaUser[] | { users?: JfaUser[] };
   const list = Array.isArray(users) ? users : users.users || [];
-  return list.some((user) => [user.name, user.username].includes(username));
+  const target = username.toLowerCase();
+  return list.some((user) => [user.name, user.username].some((name) => name?.toLowerCase() === target));
+}
+
+/**
+ * Checks whether a Jellyfin user exists.
+ *
+ * Verification is performed against the Jellyfin API when configured (its API
+ * key is static and the /Users endpoint is stable), otherwise against jfa-go.
+ * When no backend is configured — or the backend is unreachable — the result is
+ * reported as `verified: false` instead of guessing, so the UI never claims an
+ * arbitrary username exists.
+ */
+export async function checkJellyfinUser(username: string): Promise<UserCheckResult> {
+  const name = username.trim();
+  if (!name) return { exists: false, verified: false };
+
+  try {
+    if (jellyfinConfigured) {
+      return { exists: await jellyfinUserExists(name), verified: true };
+    }
+    if (config.JFA_GO_TOKEN) {
+      return { exists: await jfaUserExists(name), verified: true };
+    }
+  } catch {
+    return { exists: false, verified: false };
+  }
+
+  return { exists: false, verified: false };
 }
 
 export async function extendJellyfinExpiry(username: string, expiresAt: Date) {

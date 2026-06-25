@@ -82,7 +82,7 @@ export default function PaymentPage() {
   const [amount, setAmount] = useState(25);
   const [username, setUsername] = useState("");
   const [plexUsername, setPlexUsername] = useState("");
-  const [userState, setUserState] = useState<"idle" | "checking" | "found" | "missing">("idle");
+  const [userState, setUserState] = useState<"idle" | "checking" | "found" | "missing" | "unverified">("idle");
   const [status, setStatus] = useState<{ kind: string; text: string }>({ kind: "info", text: "" });
   const [invoiceUrl, setInvoiceUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -130,9 +130,10 @@ export default function PaymentPage() {
           body: JSON.stringify({ username })
         });
         const data = await res.json();
-        setUserState(data.exists ? "found" : "missing");
+        if (data.verified === false) setUserState("unverified");
+        else setUserState(data.exists ? "found" : "missing");
       } catch {
-        setUserState("missing");
+        setUserState("unverified");
       }
     }, 450);
     return () => clearTimeout(timer);
@@ -227,7 +228,9 @@ export default function PaymentPage() {
       ? <span className="hint ok"><span lang="de">✓ Benutzer gefunden</span><span lang="en">✓ User found</span></span>
       : userState === "missing"
         ? <span className="hint bad"><span lang="de">Benutzer nicht gefunden</span><span lang="en">User not found</span></span>
-        : null;
+        : userState === "unverified"
+          ? <span className="hint"><span lang="de">Konnte nicht geprüft werden — bitte Schreibweise selbst kontrollieren</span><span lang="en">Could not be verified — please double-check the spelling</span></span>
+          : null;
 
   const features = [
     { icon: <Film size={20} className="feature-icon" />, value: "2000+", de: "Filme", en: "Movies" },
