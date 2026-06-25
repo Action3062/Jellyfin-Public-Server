@@ -16,8 +16,10 @@ const sora = Sora({
   weight: ["600", "700", "800"]
 });
 
+const shopName = process.env.NEXT_PUBLIC_SHOP_NAME || "Payment Portal";
+
 export const metadata: Metadata = {
-  title: "Payment Portal",
+  title: `${shopName} — Payment`,
   description: "Crypto and Azteco payment portal for Jellyfin subscriptions"
 };
 

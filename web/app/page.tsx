@@ -3,12 +3,12 @@
 import {
   ArrowLeft,
   Bitcoin,
-  Clapperboard,
   ExternalLink,
   Film,
   Gauge,
   Lock,
   MessageCircle,
+  Play,
   Server,
   ShieldCheck,
   Sparkles,
@@ -285,7 +285,7 @@ export default function PaymentPage() {
         <div className="container">
           <header className="nav">
             <div className="brand">
-              <span className="brand-mark"><Clapperboard size={22} /></span>
+              <span className="brand-mark"><Play size={18} fill="currentColor" strokeWidth={0} /></span>
               <span className="brand-name">{shopName}</span>
             </div>
             <div className="lang-toggle" role="group" aria-label="Language">
