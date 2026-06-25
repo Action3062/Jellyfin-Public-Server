@@ -12,8 +12,10 @@ These are the integration points that must be checked against provider-owned doc
 ## jfa-go
 
 - `api/src/services/jfago.ts` keeps user lookup and expiry extension behind one adapter.
-- The expiry route is marked with a TODO because the exact local jfa-go Swagger route/DTO should be verified against the instance at `/swagger/index.html`.
-- The service returns mock-positive checks when `JFA_GO_TOKEN` is empty so local UI work and integration tests can run.
+- Auth: jfa-go has no static API key. The adapter logs in via `GET /token/login` (Basic auth, `JFA_GO_USER`/`JFA_GO_PASSWORD`) to obtain a short-lived JWT and caches it.
+- User existence is verified via the Jellyfin API (see `jellyfin.ts`); jfa-go is only the fallback lookup.
+- Expiry is set via `POST /users/extend` with the resolved Jellyfin user `id` and an absolute `timestamp` (Unix seconds), `try_extend_from_previous_expiry: false` — idempotent on job retries.
+- When jfa-go is not configured, `extendJellyfinExpiry` is a no-op mock so local/CI runs do not fail.
 
 ## Azteco
 

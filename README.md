@@ -48,4 +48,5 @@ Legacy field note: `discord_user` carries the Jellyfin username by design.
 
 - Leave `NOWPAYMENTS_API_KEY` empty for mock invoice URLs, or set `NOWPAYMENTS_BASE_URL=https://api-sandbox.nowpayments.io/v1` with a sandbox key.
 - Keep `AZTECO_CLIENT_MODE=mock` until the reseller API spec is available.
-- User checks query the Jellyfin API when `JELLYFIN_BASE_URL` and `JELLYFIN_API_KEY` are set (preferred), otherwise jfa-go when `JFA_GO_TOKEN` is set. With no backend configured the check returns `{ exists: false, verified: false }` and the UI shows a neutral "could not be verified" hint instead of a false positive.
+- User checks query the Jellyfin API when `JELLYFIN_BASE_URL` and `JELLYFIN_API_KEY` are set (preferred), otherwise jfa-go. With no backend configured the check returns `{ exists: false, verified: false }` and the UI shows a neutral "could not be verified" hint instead of a false positive.
+- Subscription time is credited via jfa-go: the API logs in with `JFA_GO_USER`/`JFA_GO_PASSWORD` (jfa-go issues short-lived tokens, no static key) and sets the account expiry through `POST /users/extend`.
