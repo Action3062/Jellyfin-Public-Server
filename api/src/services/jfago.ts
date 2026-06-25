@@ -61,8 +61,11 @@ async function jfaFindUserId(username: string): Promise<string | null> {
  * Verification uses the Jellyfin API when configured (preferred), otherwise
  * jfa-go. When no backend is configured — or the backend is unreachable — the
  * result is reported as `verified: false` instead of guessing, so the UI never
- * claims an arbitrary username exists.
+ * claims an arbitrary username exists. Failures are logged so the reason is
+ * visible in the API logs instead of being silently swallowed.
  */
+let warnedNoBackend = false;
+
 export async function checkJellyfinUser(username: string): Promise<UserCheckResult> {
   const name = username.trim();
   if (!name) return { exists: false, verified: false };
@@ -74,10 +77,16 @@ export async function checkJellyfinUser(username: string): Promise<UserCheckResu
     if (jfaConfigured) {
       return { exists: Boolean(await jfaFindUserId(name)), verified: true };
     }
-  } catch {
+  } catch (error) {
+    const backend = jellyfinConfigured ? "jellyfin" : "jfa-go";
+    console.error(`[user-check] ${backend} lookup failed for "${name}": ${error instanceof Error ? error.message : String(error)}`);
     return { exists: false, verified: false };
   }
 
+  if (!warnedNoBackend) {
+    warnedNoBackend = true;
+    console.warn("[user-check] no verification backend configured — set JELLYFIN_BASE_URL/JELLYFIN_API_KEY (preferred) or JFA_GO_BASE_URL/JFA_GO_USER/JFA_GO_PASSWORD; all checks return verified:false until then.");
+  }
   return { exists: false, verified: false };
 }
 
