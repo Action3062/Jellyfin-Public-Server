@@ -1,6 +1,20 @@
 "use client";
 
-import { ExternalLink, Lock, MessageCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  Bitcoin,
+  Clapperboard,
+  ExternalLink,
+  Film,
+  Gauge,
+  Lock,
+  MessageCircle,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Ticket,
+  Tv
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Plan = {
@@ -207,119 +221,167 @@ export default function PaymentPage() {
   }
 
   const userFeedback = userState === "checking"
-    ? <span className="hint checking-dots">Prüfe Benutzer</span>
+    ? <span className="hint checking-dots">{lang === "de" ? "Prüfe Benutzer" : "Checking user"}</span>
     : userState === "found"
-      ? <span className="hint ok"><span lang="de">✅ Benutzer gefunden</span><span lang="en">✅ User found</span></span>
+      ? <span className="hint ok"><span lang="de">✓ Benutzer gefunden</span><span lang="en">✓ User found</span></span>
       : userState === "missing"
         ? <span className="hint bad"><span lang="de">Benutzer nicht gefunden</span><span lang="en">User not found</span></span>
         : null;
 
+  const features = [
+    { icon: <Film size={20} className="feature-icon" />, value: "2000+", de: "Filme", en: "Movies" },
+    { icon: <Tv size={20} className="feature-icon" />, value: "500+", de: "Serien", en: "Series" },
+    { icon: <Gauge size={20} className="feature-icon" />, value: "10 Gb/s", de: "Speed", en: "Speed" },
+    { icon: <Server size={20} className="feature-icon" />, value: "Plex", de: "& Jellyfin", en: "& Jellyfin" }
+  ];
+
   return (
-    <main className="shell">
-      <header className="topbar">
-        <h1 className="title">{shopName} — Payment</h1>
-        <div className="lang-toggle" aria-label="Language">
-          <button className={lang === "de" ? "active" : ""} onClick={() => setLang("de")}>DE</button>
-          <button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button>
-        </div>
-      </header>
+    <>
+      <div className="ambient" aria-hidden="true">
+        <div className="glow glow-1" />
+        <div className="glow glow-2" />
+        <div className="grain" />
+      </div>
 
-      <section className="banner">
-        <strong>🎬 {shopName}</strong>
-        2000+ Filme · 500+ Serien · 10Gb/s · Plex & Jellyfin
-      </section>
+      <main className="page">
+        <div className="container">
+          <header className="nav">
+            <div className="brand">
+              <span className="brand-mark"><Clapperboard size={22} /></span>
+              <span className="brand-name">{shopName}</span>
+            </div>
+            <div className="lang-toggle" role="group" aria-label="Language">
+              <button className={lang === "de" ? "active" : ""} onClick={() => setLang("de")}>DE</button>
+              <button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button>
+            </div>
+          </header>
 
-      <section className="info">
-        <h2><span lang="de">🔒 Warum Crypto & Azteco?</span><span lang="en">🔒 Why Crypto & Azteco?</span></h2>
-        <p lang="de">Nur Krypto und Azteco für maximale Anonymität. Azteco-Gutscheine kannst du auf azte.co mit Kreditkarte, PayPal oder Apple Pay kaufen.</p>
-        <p lang="en">Crypto and Azteco only for maximum anonymity. You can buy Azteco vouchers on azte.co with credit card, PayPal, or Apple Pay.</p>
-      </section>
-
-      <section className="card">
-        <div className="tabs">
-          <button className={`tab ${tab === "crypto" ? "active" : ""}`} onClick={() => setTab("crypto")}>₿ Crypto (NowPayments)</button>
-          <button className={`tab ${tab === "azteco" ? "active" : ""}`} onClick={() => setTab("azteco")}>🎫 Azteco</button>
-        </div>
-
-        {tab === "crypto" ? (
-          <>
-            <div className="section-title"><span lang="de">Laufzeit</span><span lang="en">Duration</span></div>
-            <div className="dur-grid">
-              {plans.map((item) => (
-                <button key={item.id} className={`choice ${selectedPlan === item.id ? "selected" : ""}`} onClick={() => setSelectedPlan(item.id)}>
-                  {item.popular && <span className="badge">★ BEST</span>}
-                  {item.icon} {item.label}
-                  <span className="price">€{item.price_eur.toFixed(2)}</span>
-                </button>
+          <section className="hero">
+            <span className="eyebrow">
+              <Sparkles size={14} />
+              <span lang="de">Premium Streaming</span>
+              <span lang="en">Premium Streaming</span>
+            </span>
+            <h1 className="hero-title">
+              <span lang="de">Dein Zugang zu <span className="grad">{shopName}</span></span>
+              <span lang="en">Your access to <span className="grad">{shopName}</span></span>
+            </h1>
+            <p className="hero-sub">
+              <span lang="de">Aktiviere dein Abo in Sekunden — anonym bezahlt mit Krypto oder Azteco-Gutscheinen.</span>
+              <span lang="en">Activate your subscription in seconds — paid anonymously with crypto or Azteco vouchers.</span>
+            </p>
+            <div className="features">
+              {features.map((item) => (
+                <div className="feature" key={item.value + item.de}>
+                  {item.icon}
+                  <b>{item.value}</b>
+                  <span><span lang="de">{item.de}</span><span lang="en">{item.en}</span></span>
+                </div>
               ))}
             </div>
+          </section>
 
-            <div className="section-title">Coin</div>
-            <div className="coin-grid">
-              {coins.map((item) => (
-                <button key={item.id} className={`choice coin ${coin === item.id ? "selected" : ""}`} onClick={() => setCoin(item.id)}>
-                  {item.label}
-                </button>
-              ))}
+          <section className="card info-card">
+            <div className="info-icon"><ShieldCheck size={22} /></div>
+            <div>
+              <h2><span lang="de">Warum Crypto & Azteco?</span><span lang="en">Why crypto & Azteco?</span></h2>
+              <p lang="de">Nur Krypto und Azteco für maximale Anonymität. Azteco-Gutscheine kannst du auf azte.co mit Kreditkarte, PayPal oder Apple Pay kaufen.</p>
+              <p lang="en">Crypto and Azteco only for maximum anonymity. You can buy Azteco vouchers on azte.co with credit card, PayPal, or Apple Pay.</p>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="section-title"><span lang="de">Gutscheinbetrag</span><span lang="en">Voucher amount</span></div>
-            <div className="amount-grid">
-              {options.map((item) => (
-                <button key={item.eur} className={`choice ${amount === item.eur ? "selected" : ""}`} onClick={() => setAmount(item.eur)}>
-                  {lang === "de" ? item.label_de : item.label_en}
-                </button>
-              ))}
+          </section>
+
+          <section className="card pay-card">
+            <div className="tabs" role="tablist">
+              <button className={`tab ${tab === "crypto" ? "active" : ""}`} role="tab" aria-selected={tab === "crypto"} onClick={() => setTab("crypto")}>
+                <Bitcoin size={17} /> Crypto
+              </button>
+              <button className={`tab ${tab === "azteco" ? "active" : ""}`} role="tab" aria-selected={tab === "azteco"} onClick={() => setTab("azteco")}>
+                <Ticket size={17} /> Azteco
+              </button>
             </div>
-            <p className="hint"><span lang="de">Codes auf azte.co kaufen. Die Einlösung läuft automatisch und sequenziell.</span><span lang="en">Buy codes at azte.co. Redemption runs automatically and sequentially.</span></p>
+
+            {tab === "crypto" ? (
+              <>
+                <div className="section-title"><span lang="de">Laufzeit</span><span lang="en">Duration</span></div>
+                <div className="dur-grid">
+                  {plans.map((item) => (
+                    <button key={item.id} className={`choice duration ${selectedPlan === item.id ? "selected" : ""}`} onClick={() => setSelectedPlan(item.id)}>
+                      {item.popular && <span className="ribbon"><Sparkles size={10} /> BEST</span>}
+                      <span className="choice-icon">{item.icon}</span>
+                      <span className="choice-label">{item.label}</span>
+                      <span className="price">€{item.price_eur.toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="section-title"><span lang="de">Coin wählen</span><span lang="en">Choose coin</span></div>
+                <div className="coin-grid">
+                  {coins.map((item) => (
+                    <button key={item.id} className={`chip ${coin === item.id ? "selected" : ""}`} onClick={() => setCoin(item.id)}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="section-title"><span lang="de">Gutscheinbetrag</span><span lang="en">Voucher amount</span></div>
+                <div className="amount-grid">
+                  {options.map((item) => (
+                    <button key={item.eur} className={`choice amount ${amount === item.eur ? "selected" : ""}`} onClick={() => setAmount(item.eur)}>
+                      {lang === "de" ? item.label_de : item.label_en}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint" style={{ marginTop: 12 }}><span lang="de">Codes auf azte.co kaufen. Die Einlösung läuft automatisch und sequenziell.</span><span lang="en">Buy codes at azte.co. Redemption runs automatically and sequentially.</span></p>
+                <div className="field">
+                  <label>Gutschein-Code 1</label>
+                  <input className="input" maxLength={19} value={code1} onChange={(event) => setCode1(formatCode(event.target.value))} placeholder="1234-5678-9012-3456" />
+                </div>
+                <div className="field">
+                  <label>Gutschein-Code 2 <span className="hint">(optional)</span></label>
+                  <input className="input" maxLength={19} value={code2} onChange={(event) => setCode2(formatCode(event.target.value))} placeholder="1234-5678-9012-3456" />
+                </div>
+              </>
+            )}
+
             <div className="field">
-              <label>Gutschein-Code 1</label>
-              <input className="input" maxLength={19} value={code1} onChange={(event) => setCode1(formatCode(event.target.value))} placeholder="1234-5678-9012-3456" />
+              <label><span lang="de">Dein Jellyfin-Benutzername</span><span lang="en">Your Jellyfin username</span></label>
+              <input className="input" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+              {userFeedback}
             </div>
-            <div className="field">
-              <label>Gutschein-Code 2 <span className="hint">(optional)</span></label>
-              <input className="input" maxLength={19} value={code2} onChange={(event) => setCode2(formatCode(event.target.value))} placeholder="1234-5678-9012-3456" />
-            </div>
-          </>
-        )}
 
-        <div className="field">
-          <label><span lang="de">Dein Jellyfin-Benutzername</span><span lang="en">Your Jellyfin username</span></label>
-          <input className="input" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
-          {userFeedback}
+            {annualSelected && (
+              <div className="field">
+                <label>Plex-Username <span className="hint">(<span lang="de">Jahresabo beinhaltet Plex</span><span lang="en">Yearly subscription includes Plex</span>)</span></label>
+                <input className="input" value={plexUsername} onChange={(event) => setPlexUsername(event.target.value)} />
+              </div>
+            )}
+
+            <button className="primary" disabled={busy || !username.trim()} onClick={tab === "crypto" ? payCrypto : redeemAzteco}>
+              {busy ? <span className="spinner" /> : <Lock size={18} />}
+              {tab === "crypto" ? (
+                <><span lang="de">Mit Crypto bezahlen</span><span lang="en">Pay with crypto</span></>
+              ) : (
+                <><span lang="de">Einlösen & Aktivieren</span><span lang="en">Redeem & activate</span></>
+              )}
+            </button>
+
+            {status.text && <div className={`status ${status.kind}`}>{status.kind === "checking" && <span className="checking-dots" />}{status.text}</div>}
+            {invoiceUrl && (
+              <a className="pay-link" href={invoiceUrl} target="_blank" rel="noreferrer">
+                <ExternalLink size={16} /> Invoice / Pay-Link
+                <small>{invoiceUrl}</small>
+              </a>
+            )}
+          </section>
+
+          <footer className="footer">
+            <a className="footer-link" href="/"><ArrowLeft size={16} /> <span lang="de">Zurück zu {shopName}</span><span lang="en">Back to {shopName}</span></a>
+            <a className="discord" href={discordUrl} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord Support</a>
+          </footer>
         </div>
-
-        {annualSelected && (
-          <div className="field">
-            <label>Plex-Username <span className="hint">(<span lang="de">Jahresabo beinhaltet Plex</span><span lang="en">Yearly subscription includes Plex</span>)</span></label>
-            <input className="input" value={plexUsername} onChange={(event) => setPlexUsername(event.target.value)} />
-          </div>
-        )}
-
-        <button className="primary" disabled={busy || !username.trim()} onClick={tab === "crypto" ? payCrypto : redeemAzteco}>
-          {busy ? <span className="spinner" /> : <Lock size={18} />}
-          {tab === "crypto" ? (
-            <><span lang="de">Mit Crypto bezahlen</span><span lang="en">Pay with Crypto</span></>
-          ) : (
-            <><span lang="de">Einlösen & Aktivieren</span><span lang="en">Redeem & Activate</span></>
-          )}
-        </button>
-
-        {status.text && <div className={`status ${status.kind}`}>{status.kind === "checking" && <span className="checking-dots" />} {status.text}</div>}
-        {invoiceUrl && (
-          <a className="pay-link" href={invoiceUrl} target="_blank" rel="noreferrer">
-            Invoice / Pay-Link <ExternalLink size={15} />
-            <small>{invoiceUrl}</small>
-          </a>
-        )}
-      </section>
-
-      <footer className="footer">
-        <a href="/">← <span lang="de">Zurück zu Arkiv3</span><span lang="en">Back to Arkiv3</span></a>
-        <a className="discord" href={discordUrl} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord Support</a>
-      </footer>
-    </main>
+      </main>
+    </>
   );
 }
