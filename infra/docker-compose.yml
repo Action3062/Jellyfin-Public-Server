@@ -7,10 +7,12 @@ services:
         API_URL: http://api:4000
         NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-<<< SHOP_NAME >>>}
         NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-<<< DISCORD_INVITE_URL >>>}
+        NEXT_PUBLIC_PLEX_ENABLED: ${PLEX_ENABLED:-false}
     environment:
       API_URL: http://api:4000
       NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-<<< SHOP_NAME >>>}
       NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-<<< DISCORD_INVITE_URL >>>}
+      NEXT_PUBLIC_PLEX_ENABLED: ${PLEX_ENABLED:-false}
     ports:
       - "3000:3000"
     depends_on:

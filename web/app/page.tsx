@@ -61,6 +61,8 @@ const defaultOptions: AztecoOption[] = [
 
 const shopName = process.env.NEXT_PUBLIC_SHOP_NAME || "<<< SHOP_NAME >>>";
 const discordUrl = process.env.NEXT_PUBLIC_SHOP_DISCORD_URL || "<<< DISCORD_INVITE_URL >>>";
+// Plex is disabled by default. Set NEXT_PUBLIC_PLEX_ENABLED=true to re-enable.
+const plexEnabled = (process.env.NEXT_PUBLIC_PLEX_ENABLED || "false") === "true";
 const apiBase = "/pay/api";
 
 function formatCode(value: string) {
@@ -153,7 +155,7 @@ export default function PaymentPage() {
   }, []);
 
   async function maybeInvitePlex(product: string) {
-    if (!plexUsername.trim() || !annualSelected) return;
+    if (!plexEnabled || !plexUsername.trim() || !annualSelected) return;
     await fetch(`${apiBase}/plex/invite`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -245,7 +247,9 @@ export default function PaymentPage() {
     { icon: <Film size={20} className="feature-icon" />, value: "2000+", de: "Filme", en: "Movies" },
     { icon: <Tv size={20} className="feature-icon" />, value: "500+", de: "Serien", en: "Series" },
     { icon: <Gauge size={20} className="feature-icon" />, value: "10 Gb/s", de: "Speed", en: "Speed" },
-    { icon: <Server size={20} className="feature-icon" />, value: "Plex", de: "& Jellyfin", en: "& Jellyfin" }
+    plexEnabled
+      ? { icon: <Server size={20} className="feature-icon" />, value: "Plex", de: "& Jellyfin", en: "& Jellyfin" }
+      : { icon: <Server size={20} className="feature-icon" />, value: "Jellyfin", de: "Streaming", en: "Streaming" }
   ];
 
   return (
@@ -365,7 +369,7 @@ export default function PaymentPage() {
               {userFeedback}
             </div>
 
-            {annualSelected && (
+            {plexEnabled && annualSelected && (
               <div className="field">
                 <label>Plex-Username <span className="hint">(<span lang="de">Jahresabo beinhaltet Plex</span><span lang="en">Yearly subscription includes Plex</span>)</span></label>
                 <input className="input" value={plexUsername} onChange={(event) => setPlexUsername(event.target.value)} />
