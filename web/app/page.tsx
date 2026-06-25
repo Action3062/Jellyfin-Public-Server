@@ -92,6 +92,15 @@ export default function PaymentPage() {
 
   const plan = useMemo(() => plans.find((item) => item.id === selectedPlan) || plans[0], [plans, selectedPlan]);
   const annualSelected = plan?.months === 12 || amount >= 100;
+  const userConfirmed = userState === "found";
+
+  function errorText(code: string) {
+    const map: Record<string, { de: string; en: string }> = {
+      user_not_found: { de: "Benutzer nicht gefunden — Zahlung nicht möglich", en: "User not found — payment not possible" },
+      user_unverified: { de: "Benutzer nicht prüfbar — Zahlung nicht möglich", en: "User not verifiable — payment not possible" }
+    };
+    return map[code]?.[lang] ?? code;
+  }
 
   useEffect(() => {
     const stored = localStorage.getItem("pay-portal-lang");
@@ -191,7 +200,7 @@ export default function PaymentPage() {
         }
       }, 30000);
     } catch (error) {
-      setStatus({ kind: "error", text: error instanceof Error ? error.message : "error" });
+      setStatus({ kind: "error", text: error instanceof Error ? errorText(error.message) : "error" });
     } finally {
       setBusy(false);
     }
@@ -216,7 +225,7 @@ export default function PaymentPage() {
       await maybeInvitePlex("hd");
       setStatus({ kind: "success", text: lang === "de" ? `Aktiviert: ${total} € eingelöst.` : `Active: redeemed €${total}.` });
     } catch (error) {
-      setStatus({ kind: "error", text: error instanceof Error ? error.message : "error" });
+      setStatus({ kind: "error", text: error instanceof Error ? errorText(error.message) : "error" });
     } finally {
       setBusy(false);
     }
@@ -363,7 +372,7 @@ export default function PaymentPage() {
               </div>
             )}
 
-            <button className="primary" disabled={busy || !username.trim()} onClick={tab === "crypto" ? payCrypto : redeemAzteco}>
+            <button className="primary" disabled={busy || !userConfirmed} onClick={tab === "crypto" ? payCrypto : redeemAzteco}>
               {busy ? <span className="spinner" /> : <Lock size={18} />}
               {tab === "crypto" ? (
                 <><span lang="de">Mit Crypto bezahlen</span><span lang="en">Pay with crypto</span></>
@@ -371,6 +380,13 @@ export default function PaymentPage() {
                 <><span lang="de">Einlösen & Aktivieren</span><span lang="en">Redeem & activate</span></>
               )}
             </button>
+
+            {username.trim() && !userConfirmed && userState !== "checking" && (
+              <p className="hint" style={{ marginTop: 10, textAlign: "center" }}>
+                <span lang="de">Bezahlung erst möglich, wenn der Jellyfin-Benutzer bestätigt ist.</span>
+                <span lang="en">Payment is only possible once the Jellyfin user is confirmed.</span>
+              </p>
+            )}
 
             {status.text && <div className={`status ${status.kind}`}>{status.kind === "checking" && <span className="checking-dots" />}{status.text}</div>}
             {invoiceUrl && (

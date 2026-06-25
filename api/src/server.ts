@@ -70,6 +70,15 @@ app.post("/pay/api/nowpayments/create", async (request, reply) => {
     coin: z.enum(supportedCoins),
     discord_user: z.string().min(1).max(80)
   }).parse(request.body);
+
+  // Block payment unless the Jellyfin user is confirmed to exist: provisioning
+  // credits the subscription time to this username, so an unknown/unverifiable
+  // user would mean paying with no way to apply the time.
+  const userCheck = await checkJellyfinUser(body.discord_user.trim());
+  if (!(userCheck.verified && userCheck.exists)) {
+    return reply.code(422).send({ error: userCheck.verified ? "user_not_found" : "user_unverified" });
+  }
+
   const plan = defaultPlans.find((item) => item.id === body.tier_id);
   if (!plan) return reply.code(400).send({ error: "unknown tier_id" });
 
@@ -113,6 +122,14 @@ app.post("/pay/api/azteco/redeem", { config: { rateLimit: { max: 8, timeWindow: 
     discord_user: z.string().min(1).max(80),
     product: z.string().default("hd")
   }).parse(request.body);
+
+  // Same guard as the crypto flow: the redeemed time is credited to this
+  // Jellyfin user, so refuse unless the user is confirmed to exist.
+  const userCheck = await checkJellyfinUser(body.discord_user.trim());
+  if (!(userCheck.verified && userCheck.exists)) {
+    return reply.code(422).send({ value_eur: 0, error: userCheck.verified ? "user_not_found" : "user_unverified" });
+  }
+
   const codeHash = sha256(body.code);
   const existing = await prisma.voucherRedemption.findUnique({ where: { codeHash } });
   if (existing?.status === "redeemed") return reply.code(409).send({ value_eur: 0, error: "already redeemed" });
