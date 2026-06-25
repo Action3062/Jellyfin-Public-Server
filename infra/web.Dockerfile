@@ -10,7 +10,11 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 COPY web ./web
 ARG API_URL=http://api:4000
+ARG NEXT_PUBLIC_SHOP_NAME="<<< SHOP_NAME >>>"
+ARG NEXT_PUBLIC_SHOP_DISCORD_URL="<<< DISCORD_INVITE_URL >>>"
 ENV API_URL=$API_URL
+ENV NEXT_PUBLIC_SHOP_NAME=$NEXT_PUBLIC_SHOP_NAME
+ENV NEXT_PUBLIC_SHOP_DISCORD_URL=$NEXT_PUBLIC_SHOP_DISCORD_URL
 RUN npm --workspace web run build
 
 FROM node:20-alpine
