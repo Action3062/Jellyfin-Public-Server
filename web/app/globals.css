@@ -500,7 +500,9 @@ html:not(.en) [lang="en"] { display: none !important; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 50px;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--glass-2);
@@ -513,7 +515,14 @@ html:not(.en) [lang="en"] { display: none !important; }
   transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease, color 0.16s ease;
 }
 
+.chip svg {
+  flex: none;
+  border-radius: 50%;
+  transition: transform 0.16s ease;
+}
+
 .chip:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+.chip:hover svg { transform: scale(1.08); }
 
 .chip.selected {
   border-color: transparent;

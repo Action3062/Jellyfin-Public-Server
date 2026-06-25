@@ -16,6 +16,7 @@ import {
   Tv
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CoinIcon } from "./coin-icons";
 
 type Plan = {
   id: string;
@@ -93,7 +94,7 @@ export default function PaymentPage() {
   const annualSelected = plan?.months === 12 || amount >= 100;
 
   useEffect(() => {
-    const stored = localStorage.getItem("arkiv3-pay-lang");
+    const stored = localStorage.getItem("pay-portal-lang");
     const nextLang = stored === "en" ? "en" : "de";
     setLang(nextLang);
     document.documentElement.classList.toggle("en", nextLang === "en");
@@ -112,7 +113,7 @@ export default function PaymentPage() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("en", lang === "en");
-    localStorage.setItem("arkiv3-pay-lang", lang);
+    localStorage.setItem("pay-portal-lang", lang);
   }, [lang]);
 
   useEffect(() => {
@@ -318,6 +319,7 @@ export default function PaymentPage() {
                 <div className="coin-grid">
                   {coins.map((item) => (
                     <button key={item.id} className={`chip ${coin === item.id ? "selected" : ""}`} onClick={() => setCoin(item.id)}>
+                      <CoinIcon id={item.id} size={20} />
                       {item.label}
                     </button>
                   ))}
