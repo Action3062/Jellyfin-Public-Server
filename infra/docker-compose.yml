@@ -25,7 +25,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/payment_portal
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/payment_portal
       REDIS_URL: redis://redis:6379
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:-http://localhost:4000}
@@ -44,17 +44,22 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: payment_portal
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Bound to localhost only — not reachable from outside the host. Remove this
+    # mapping entirely if no host-side DB access is needed.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   redis:
     image: redis:7-alpine
+    # Bound to localhost only. To require a password, add:
+    #   command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    # and set REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379 for the api service.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
 # jfa-go runs as its own container on this host (managed separately, not in this stack).
 # The API reaches it via JFA_GO_BASE_URL in .env (default: http://host.docker.internal:8056).

@@ -44,7 +44,9 @@ export async function createNowPaymentsInvoice(input: InvoiceInput) {
 }
 
 export function verifyNowPaymentsIpn(payload: unknown, header: string | undefined) {
-  if (!config.NOWPAYMENTS_IPN_SECRET) return config.NODE_ENV !== "production";
+  // Fail closed: without an IPN secret we cannot verify the signature, so reject
+  // every webhook regardless of NODE_ENV (prevents forged "finished" callbacks).
+  if (!config.NOWPAYMENTS_IPN_SECRET) return false;
   if (!header) return false;
   const expected = nowpaymentsSignature(payload, config.NOWPAYMENTS_IPN_SECRET);
   return timingSafeEqual(expected, header);

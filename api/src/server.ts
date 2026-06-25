@@ -46,7 +46,9 @@ new Worker("provisioning", async (job) => {
 
 const app = Fastify({ logger: true });
 await app.register(helmet);
-await app.register(cors, { origin: true });
+// Restrict CORS to the configured web origin. Server-to-server requests (Next
+// proxy, NowPayments IPN) carry no Origin header and are unaffected.
+await app.register(cors, { origin: config.PUBLIC_BASE_URL });
 await app.register(rateLimit, { max: 90, timeWindow: "1 minute" });
 
 function serializePlan(plan: typeof defaultPlans[number]) {
@@ -59,7 +61,7 @@ app.get("/pay/api/products", async () => defaultPlans.map(serializePlan));
 
 app.get("/pay/api/azteco/options", async () => aztecoOptions);
 
-app.post("/pay/api/user/check", async (request) => {
+app.post("/pay/api/user/check", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request) => {
   const body = z.object({ username: z.string().min(1).max(80) }).parse(request.body);
   return checkJellyfinUser(body.username.trim());
 });
@@ -231,7 +233,8 @@ app.post("/api/webhooks/nowpayments", async (request, reply) => {
 app.setErrorHandler((error, _request, reply) => {
   app.log.error(error);
   if (error instanceof z.ZodError) return reply.code(400).send({ error: error.issues[0]?.message || "invalid input" });
-  return reply.code(500).send({ error: error.message || "server error" });
+  // Log the detail server-side, return a generic message to avoid leaking internals.
+  return reply.code(500).send({ error: "internal server error" });
 });
 
 app.listen({ port: config.PORT, host: "0.0.0.0" });
