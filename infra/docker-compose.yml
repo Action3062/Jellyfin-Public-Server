@@ -3,6 +3,10 @@ services:
     build:
       context: ..
       dockerfile: infra/web.Dockerfile
+      args:
+        API_URL: http://api:4000
+        NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-<<< SHOP_NAME >>>}
+        NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-<<< DISCORD_INVITE_URL >>>}
     environment:
       API_URL: http://api:4000
       NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-<<< SHOP_NAME >>>}
