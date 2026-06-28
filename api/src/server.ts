@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -9,11 +9,14 @@ import { z } from "zod";
 import { config } from "./config.js";
 import { aztecoOptions, defaultPlans, supportedCoins } from "./data/defaults.js";
 import { sha256 } from "./lib/hash.js";
+import { safeEqual, signAdminToken, verifyAdminToken } from "./lib/adminToken.js";
 import { createAztecoClient } from "./services/azteco.js";
 import { checkJellyfinUser } from "./services/jfago.js";
 import { createNowPaymentsInvoice, verifyNowPaymentsIpn } from "./services/nowpayments.js";
 import { invitePlexUser } from "./services/plex.js";
-import { provisionDays, provisionMonths } from "./services/provisioning.js";
+import { provisionDays, provisionManual, provisionMonths } from "./services/provisioning.js";
+
+const adminConfigured = Boolean(config.ADMIN_USERNAME && config.ADMIN_PASSWORD && config.ADMIN_SESSION_SECRET);
 
 const prisma = new PrismaClient();
 function redisConnection(url: string): ConnectionOptions {
@@ -229,6 +232,42 @@ app.post("/api/webhooks/nowpayments", async (request, reply) => {
     data: { processedAt: new Date() }
   });
   return { ok: true };
+});
+
+const requireAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
+  if (!adminConfigured) return reply.code(503).send({ error: "admin_not_configured" });
+  const header = request.headers.authorization;
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  if (!verifyAdminToken(token, config.ADMIN_SESSION_SECRET)) return reply.code(401).send({ error: "unauthorized" });
+};
+
+app.post("/admin/api/login", { config: { rateLimit: { max: 5, timeWindow: "5 minutes" } } }, async (request, reply) => {
+  if (!adminConfigured) return reply.code(503).send({ error: "admin_not_configured" });
+  const body = z.object({ username: z.string().min(1).max(120), password: z.string().min(1).max(200) }).parse(request.body);
+  // Compare both before AND-ing so the result is not short-circuited on the username.
+  const userOk = safeEqual(body.username, config.ADMIN_USERNAME);
+  const passOk = safeEqual(body.password, config.ADMIN_PASSWORD);
+  if (!(userOk && passOk)) return reply.code(401).send({ error: "invalid_credentials" });
+  const ttl = 8 * 60 * 60;
+  return { token: signAdminToken(body.username, config.ADMIN_SESSION_SECRET, ttl), expires_in: ttl };
+});
+
+app.post("/admin/api/credit", { preHandler: requireAdmin }, async (request, reply) => {
+  const body = z.object({
+    username: z.string().min(1).max(80),
+    days: z.number().int().min(1).max(3650),
+    amount_eur: z.number().min(0).max(100000).optional(),
+    note: z.string().max(200).optional()
+  }).parse(request.body);
+
+  // Same guard as the paid flows: only credit a confirmed Jellyfin user.
+  const userCheck = await checkJellyfinUser(body.username.trim());
+  if (!(userCheck.verified && userCheck.exists)) {
+    return reply.code(422).send({ error: userCheck.verified ? "user_not_found" : "user_unverified" });
+  }
+
+  const result = await provisionManual(prisma, body.username.trim(), "hd", body.days, body.amount_eur ?? 0, (body.note || "").trim());
+  return { ok: true, days: body.days, expires_at: result.expiresAt };
 });
 
 app.setErrorHandler((error, _request, reply) => {

@@ -10,6 +10,7 @@ datasource db {
 enum Provider {
   nowpayments
   azteco
+  manual
 }
 
 enum SubscriptionStatus {

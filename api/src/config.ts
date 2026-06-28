@@ -22,7 +22,10 @@ const schema = z.object({
   PLEX_TOKEN: z.string().default(""),
   PLEX_SERVER_NAME: z.string().default(""),
   DATABASE_URL: z.string().default("postgres://postgres:postgres@localhost:5432/payment_portal"),
-  REDIS_URL: z.string().default("redis://localhost:6379")
+  REDIS_URL: z.string().default("redis://localhost:6379"),
+  ADMIN_USERNAME: z.string().default(""),
+  ADMIN_PASSWORD: z.string().default(""),
+  ADMIN_SESSION_SECRET: z.string().default("")
 });
 
 export const config = schema.parse(process.env);
