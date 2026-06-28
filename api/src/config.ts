@@ -13,6 +13,7 @@ const schema = z.object({
   AZTECO_RESELLER_API_BASE: z.string().default(""),
   AZTECO_RESELLER_API_KEY: z.string().default(""),
   AZTECO_CLIENT_MODE: z.enum(["mock", "real"]).default("mock"),
+  AZTECO_ENABLED: z.string().default("false").transform((value) => value === "true"),
   JFA_GO_BASE_URL: z.string().url().default("http://jfa-go:8056"),
   JFA_GO_USER: z.string().default(""),
   JFA_GO_PASSWORD: z.string().default(""),

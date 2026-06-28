@@ -63,6 +63,8 @@ const shopName = process.env.NEXT_PUBLIC_SHOP_NAME || "<<< SHOP_NAME >>>";
 const discordUrl = process.env.NEXT_PUBLIC_SHOP_DISCORD_URL || "<<< DISCORD_INVITE_URL >>>";
 // Plex is disabled by default. Set NEXT_PUBLIC_PLEX_ENABLED=true to re-enable.
 const plexEnabled = (process.env.NEXT_PUBLIC_PLEX_ENABLED || "false") === "true";
+// Azteco is disabled by default. Set NEXT_PUBLIC_AZTECO_ENABLED=true to re-enable.
+const aztecoEnabled = (process.env.NEXT_PUBLIC_AZTECO_ENABLED || "false") === "true";
 const apiBase = "/pay/api";
 
 function formatCode(value: string) {
@@ -114,7 +116,8 @@ export default function PaymentPage() {
   function errorText(code: string) {
     const map: Record<string, { de: string; en: string }> = {
       user_not_found: { de: "Benutzer nicht gefunden — Zahlung nicht möglich", en: "User not found — payment not possible" },
-      user_unverified: { de: "Benutzer nicht prüfbar — Zahlung nicht möglich", en: "User not verifiable — payment not possible" }
+      user_unverified: { de: "Benutzer nicht prüfbar — Zahlung nicht möglich", en: "User not verifiable — payment not possible" },
+      azteco_disabled: { de: "Azteco ist derzeit deaktiviert", en: "Azteco is currently disabled" }
     };
     return map[code]?.[lang] ?? code;
   }
@@ -305,8 +308,17 @@ export default function PaymentPage() {
               <span lang="en">Your access to <span className="grad">{shopName}</span></span>
             </h1>
             <p className="hero-sub">
-              <span lang="de">Aktiviere dein Abo in Sekunden — anonym bezahlt mit Krypto oder Azteco-Gutscheinen.</span>
-              <span lang="en">Activate your subscription in seconds — paid anonymously with crypto or Azteco vouchers.</span>
+              {aztecoEnabled ? (
+                <>
+                  <span lang="de">Aktiviere dein Abo in Sekunden — anonym bezahlt mit Krypto oder Azteco-Gutscheinen.</span>
+                  <span lang="en">Activate your subscription in seconds — paid anonymously with crypto or Azteco vouchers.</span>
+                </>
+              ) : (
+                <>
+                  <span lang="de">Aktiviere dein Abo in Sekunden — anonym bezahlt mit Krypto.</span>
+                  <span lang="en">Activate your subscription in seconds — paid anonymously with crypto.</span>
+                </>
+              )}
             </p>
             <div className="features">
               {features.map((item) => (
@@ -322,21 +334,33 @@ export default function PaymentPage() {
           <section className="card info-card">
             <div className="info-icon"><ShieldCheck size={22} /></div>
             <div>
-              <h2><span lang="de">Warum Crypto & Azteco?</span><span lang="en">Why crypto & Azteco?</span></h2>
-              <p lang="de">Nur Krypto und Azteco für maximale Anonymität. Azteco-Gutscheine kannst du auf azte.co mit Kreditkarte, PayPal oder Apple Pay kaufen.</p>
-              <p lang="en">Crypto and Azteco only for maximum anonymity. You can buy Azteco vouchers on azte.co with credit card, PayPal, or Apple Pay.</p>
+              {aztecoEnabled ? (
+                <>
+                  <h2><span lang="de">Warum Crypto & Azteco?</span><span lang="en">Why crypto & Azteco?</span></h2>
+                  <p lang="de">Nur Krypto und Azteco für maximale Anonymität. Azteco-Gutscheine kannst du auf azte.co mit Kreditkarte, PayPal oder Apple Pay kaufen.</p>
+                  <p lang="en">Crypto and Azteco only for maximum anonymity. You can buy Azteco vouchers on azte.co with credit card, PayPal, or Apple Pay.</p>
+                </>
+              ) : (
+                <>
+                  <h2><span lang="de">Warum Crypto?</span><span lang="en">Why crypto?</span></h2>
+                  <p lang="de">Nur Krypto für maximale Anonymität — keine Konten, keine persönlichen Daten. Schnell und sicher.</p>
+                  <p lang="en">Crypto only for maximum anonymity — no accounts, no personal data. Fast and secure.</p>
+                </>
+              )}
             </div>
           </section>
 
           <section className="card pay-card">
-            <div className="tabs" role="tablist">
-              <button className={`tab ${tab === "crypto" ? "active" : ""}`} role="tab" aria-selected={tab === "crypto"} onClick={() => setTab("crypto")}>
-                <Bitcoin size={17} /> Crypto
-              </button>
-              <button className={`tab ${tab === "azteco" ? "active" : ""}`} role="tab" aria-selected={tab === "azteco"} onClick={() => setTab("azteco")}>
-                <Ticket size={17} /> Azteco
-              </button>
-            </div>
+            {aztecoEnabled && (
+              <div className="tabs" role="tablist">
+                <button className={`tab ${tab === "crypto" ? "active" : ""}`} role="tab" aria-selected={tab === "crypto"} onClick={() => setTab("crypto")}>
+                  <Bitcoin size={17} /> Crypto
+                </button>
+                <button className={`tab ${tab === "azteco" ? "active" : ""}`} role="tab" aria-selected={tab === "azteco"} onClick={() => setTab("azteco")}>
+                  <Ticket size={17} /> Azteco
+                </button>
+              </div>
+            )}
 
             {tab === "crypto" ? (
               <>

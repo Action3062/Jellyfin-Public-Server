@@ -119,6 +119,7 @@ app.get("/pay/api/nowpayments/status/:invoice_id", async (request, reply) => {
 });
 
 app.post("/pay/api/azteco/redeem", { config: { rateLimit: { max: 8, timeWindow: "10 minutes" } } }, async (request, reply) => {
+  if (!config.AZTECO_ENABLED) return reply.code(403).send({ value_eur: 0, error: "azteco_disabled" });
   const body = z.object({
     code: z.string().regex(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/),
     discord_user: z.string().min(1).max(80),
