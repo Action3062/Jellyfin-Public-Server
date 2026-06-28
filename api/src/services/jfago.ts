@@ -41,7 +41,9 @@ async function jfaFetch(path: string, init: RequestInit = {}) {
   let res = await send(await jfaToken());
   if (res.status === 401) res = await send(await jfaToken(true)); // token expired -> re-login once
   if (!res.ok) throw new Error(`jfa-go ${path} failed: ${res.status}`);
-  return res.json();
+  // Some endpoints (e.g. /users/extend) reply with an empty body — don't choke on it.
+  const text = await res.text();
+  return text ? JSON.parse(text) : {};
 }
 
 async function jfaGetUsers(): Promise<JfaUser[]> {
