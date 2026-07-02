@@ -25,7 +25,10 @@ const schema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   ADMIN_USERNAME: z.string().default(""),
   ADMIN_PASSWORD: z.string().default(""),
-  ADMIN_SESSION_SECRET: z.string().default("")
+  ADMIN_SESSION_SECRET: z.string().default(""),
+  // Shared secret the Discord bot sends (Bearer) on write endpoints
+  // (heartbeat/report/command-ack). Empty = bot write endpoints disabled.
+  BOT_API_SECRET: z.string().default("")
 });
 
 export const config = schema.parse(process.env);

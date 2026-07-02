@@ -3,6 +3,36 @@ import { nanoid } from "nanoid";
 import { addDays, addMonths, laterOf } from "../lib/expiry.js";
 import { extendJellyfinExpiry } from "./jfago.js";
 
+/**
+ * Sets a Jellyfin account's expiry to an ABSOLUTE date (admin correction/undo),
+ * bypassing the stacking logic. Records a manual subscription with a note for
+ * the audit trail but no payment, so revenue stays untouched.
+ */
+export async function setManualExpiry(
+  prisma: PrismaClient,
+  username: string,
+  expiresAt: Date,
+  note: string
+) {
+  const user = await prisma.user.upsert({
+    where: { jellyfinUsername: username },
+    update: {},
+    create: { jellyfinUsername: username }
+  });
+  await extendJellyfinExpiry(username, expiresAt);
+  await prisma.subscription.create({
+    data: {
+      userId: user.id,
+      plan: note ? `korrektur: ${note}` : "korrektur",
+      source: "manual",
+      startsAt: new Date(),
+      expiresAt,
+      status: "active"
+    }
+  });
+  return { expiresAt };
+}
+
 export async function provisionMonths(prisma: PrismaClient, username: string, product: string, plan: string, months: number) {
   const user = await prisma.user.upsert({
     where: { jellyfinUsername: username },

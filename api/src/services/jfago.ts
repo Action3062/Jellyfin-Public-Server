@@ -57,6 +57,66 @@ async function jfaFindUserId(username: string): Promise<string | null> {
   return match?.id || null;
 }
 
+export type JfaUserDetailed = {
+  id: string;
+  name: string;
+  expiry: number; // Unix seconds (0 = no expiry)
+  disabled: boolean;
+  discordId?: string;
+  lastActive?: number; // Unix seconds
+  email?: string;
+};
+
+function pick(obj: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+  }
+  return undefined;
+}
+
+/**
+ * Full user list for the admin panel. Parsed defensively because jfa-go's JSON
+ * tag casing for the user-list response differs between versions.
+ */
+export async function listJfaUsersDetailed(): Promise<JfaUserDetailed[]> {
+  if (!jfaConfigured) return [];
+  const data = (await jfaFetch("/users")) as Record<string, unknown>;
+  const rawList = (pick(data, "users", "UserList", "user_list") ?? []) as Array<Record<string, unknown>>;
+  return rawList
+    .map((entry) => {
+      const discord = pick(entry, "discord_id", "discordID", "DiscordID");
+      const lastActive = Number(pick(entry, "last_active", "lastActive", "LastActive") ?? 0);
+      const email = pick(entry, "email", "Email");
+      return {
+        id: String(pick(entry, "id", "ID") ?? ""),
+        name: String(pick(entry, "name", "Name") ?? ""),
+        expiry: Number(pick(entry, "expiry", "Expiry") ?? 0),
+        disabled: Boolean(pick(entry, "disabled", "Disabled") ?? false),
+        discordId: discord ? String(discord) : undefined,
+        lastActive: Number.isFinite(lastActive) && lastActive > 0 ? lastActive : undefined,
+        email: email ? String(email) : undefined
+      };
+    })
+    .filter((entry) => entry.name);
+}
+
+/** Enable or disable a Jellyfin account via jfa-go, without touching its expiry. */
+export async function setJfaUserEnabled(username: string, enabled: boolean) {
+  if (!jfaConfigured) return { ok: true, mock: true };
+  const userId = await jfaFindUserId(username);
+  if (!userId) throw new Error(`jfa-go: user not found: ${username}`);
+  await jfaFetch("/users/enable", {
+    method: "POST",
+    body: JSON.stringify({
+      users: [userId],
+      enabled,
+      notify: false,
+      reason: enabled ? "Re-enabled by admin" : "Disabled by admin"
+    })
+  });
+  return { ok: true, userId, enabled };
+}
+
 /**
  * Checks whether a Jellyfin user exists.
  *

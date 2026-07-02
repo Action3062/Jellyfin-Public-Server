@@ -43,19 +43,43 @@ npm run dev
 - `POST /pay/api/azteco/redeem`
 - `POST /pay/api/plex/invite`
 
-Admin (Bearer token from `POST /admin/api/login`):
+Bot-facing (read endpoints public; write endpoints need `Authorization: Bearer $BOT_API_SECRET`):
 
-- `POST /admin/api/credit`
-- `GET /admin/api/settings`
-- `POST /admin/api/settings/trial`
+- `GET /pay/api/trial/status` → `{ enabled, trial_hours, nudge_hours }`
+- `GET /pay/api/bot/flags` → `{ flags: { <name>: true|false|null } }`
+- `GET /pay/api/support/status` → `{ status, message }`
+- `POST /pay/api/bot/heartbeat`
+- `POST /pay/api/bot/report` (`kind` = `trials` | `tickets` | `funnel`)
+- `GET /pay/api/bot/commands` / `POST /pay/api/bot/commands/ack`
+
+Admin (Bearer token from `POST /admin/api/login`, optional TOTP):
+
+- Auth: `POST /admin/api/login`, `POST /admin/api/refresh`, `GET /admin/api/2fa/status`, `POST /admin/api/2fa/{setup,enable,disable}`
+- Dashboard: `GET /admin/api/dashboard`, `GET /admin/api/reconciliation`, `GET /admin/api/health`, `GET /admin/api/audit`
+- Payments: `GET /admin/api/payments`, `GET /admin/api/webhooks`, `GET /admin/api/vouchers`, `GET /admin/api/export/payments.csv`
+- Users: `GET /admin/api/users`, `GET /admin/api/users/:username`, `POST /admin/api/users/enable`, `GET /admin/api/expiry-preview`
+- Credit: `POST /admin/api/credit`, `POST /admin/api/expiry/set`
+- Queue: `GET /admin/api/queue`, `POST /admin/api/queue/retry`
+- Settings & bot: `GET/POST /admin/api/settings`, `POST /admin/api/settings/trial`, `GET /admin/api/bot`, `POST /admin/api/bot/{flags,support,trial-params,command}`
 
 Legacy field note: `discord_user` carries the Jellyfin username by design.
 
-## Discord Trial Switch
+## Admin Dashboard
 
-The admin panel (`/admin`) has a "Discord-Trials" toggle. Its state is stored in the `AppSetting` table (`discord_trial_enabled`, missing row = enabled) and exposed read-only at `GET /pay/api/trial/status` → `{ "enabled": true|false }`.
+`/admin` is a tabbed dashboard (Übersicht, Gutschrift, Zahlungen, Nutzer, Discord, Betrieb, Einstellungen):
 
-The external Discord trial bot should call this endpoint before handing out a trial and refuse when `enabled` is `false` (e.g. "Trials sind derzeit deaktiviert"). Recommended: treat request errors as disabled (fail closed) so trials can't be farmed while the portal is down.
+- **Übersicht** — revenue KPIs (`Payment` aggregates), monthly chart, provider split, top payers, alert banner.
+- **Zahlungen** — filterable payment journal with NowPayments IPN drill-down (`WebhookEvent`), Azteco voucher log, CSV export.
+- **Nutzer** — live jfa-go user list (expiry/disabled/source/revenue), expiring-soon quick-credit, enable/disable, per-user history, drift & abuse flags.
+- **Discord** — remote feature-flag toggles, support status, trial parameters, trial reset, funnel history, bot heartbeat.
+- **Betrieb** — integration health ampel, BullMQ queue monitor with retry, reconciliation warnings, audit log.
+- **Einstellungen** — trial toggle, TOTP 2FA setup, session countdown/refresh, absolute-expiry correction. Dark/light + installable PWA.
+
+State that isn't in the relational tables lives in `AppSetting` (trial toggle, feature flags, support status, trial params, bot heartbeat, TOTP). New tables: `AdminAuditLog`, `FunnelSnapshot`, `BotReport`, `BotCommand` — run `npm --workspace api run prisma:migrate` after pulling.
+
+## Discord Bot Integration
+
+The Discord bot (separate repo) polls the portal. The trial gate stays the core contract: the bot calls `GET /pay/api/trial/status` before handing out a trial and refuses when `enabled` is `false`; treat request errors as disabled (fail closed) so trials can't be farmed while the portal is down. With `PORTAL_BASE_URL` + `BOT_API_SECRET` set, the bot additionally pulls feature-flag/support overrides and pushes heartbeat, trial/ticket/funnel snapshots, and executes queued commands (e.g. trial reset).
 
 ## Sandbox Notes
 
