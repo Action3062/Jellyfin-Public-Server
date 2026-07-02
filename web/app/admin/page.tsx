@@ -30,6 +30,11 @@ export default function AdminPage() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
 
+  // trial switch (null = still loading / not loaded)
+  const [trialEnabled, setTrialEnabled] = useState<boolean | null>(null);
+  const [trialBusy, setTrialBusy] = useState(false);
+  const [trialError, setTrialError] = useState("");
+
   // credit
   const [jfUser, setJfUser] = useState("");
   const [userState, setUserState] = useState<UserState>("idle");
@@ -74,6 +79,55 @@ export default function AdminPage() {
     sessionStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setPassword("");
+  }
+
+  useEffect(() => {
+    if (!token) {
+      setTrialEnabled(null);
+      setTrialError("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/admin/api/settings", { headers: { Authorization: `Bearer ${token}` } });
+        if (res.status === 401) {
+          if (!cancelled) logout();
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled && typeof data.trial_enabled === "boolean") setTrialEnabled(data.trial_enabled);
+      } catch {
+        if (!cancelled) setTrialError("Trial-Status konnte nicht geladen werden");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  async function toggleTrial() {
+    if (trialEnabled === null || trialBusy) return;
+    const next = !trialEnabled;
+    setTrialBusy(true);
+    setTrialError("");
+    try {
+      const res = await fetch("/admin/api/settings/trial", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ enabled: next })
+      });
+      if (res.status === 401) {
+        logout();
+        throw new Error("unauthorized");
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || "error");
+      setTrialEnabled(next);
+    } catch (error) {
+      setTrialError(errorText(error instanceof Error ? error.message : "error"));
+    } finally {
+      setTrialBusy(false);
+    }
   }
 
   async function login() {
@@ -187,6 +241,35 @@ export default function AdminPage() {
               {loginError && <div className="status error">{loginError}</div>}
             </section>
           ) : (
+            <>
+            <section className="card pay-card" style={{ marginBottom: 18 }}>
+              <div className="section-title">Discord-Trials</div>
+              <div className="toggle-row">
+                <div>
+                  <div className="toggle-label">Trial-Funktion</div>
+                  <span className="hint">
+                    {trialEnabled === null
+                      ? "Status wird geladen …"
+                      : trialEnabled
+                        ? "Der Bot darf neue Trials vergeben"
+                        : "Der Bot vergibt keine neuen Trials"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={trialEnabled === true}
+                  aria-label="Trial-Funktion umschalten"
+                  className={`switch${trialEnabled ? " on" : ""}`}
+                  disabled={trialEnabled === null || trialBusy}
+                  onClick={toggleTrial}
+                >
+                  <span className="knob" />
+                </button>
+              </div>
+              {trialError && <div className="status error">{trialError}</div>}
+            </section>
+
             <section className="card pay-card">
               <div className="section-title">Zeit gutschreiben</div>
 
@@ -223,6 +306,7 @@ export default function AdminPage() {
 
               {result.text && <div className={`status ${result.kind}`}>{result.kind === "checking" && <span className="checking-dots" />}{result.text}</div>}
             </section>
+            </>
           )}
         </div>
       </main>

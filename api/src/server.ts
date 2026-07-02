@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import { aztecoOptions, defaultPlans, supportedCoins } from "./data/defaults.js";
 import { sha256 } from "./lib/hash.js";
 import { safeEqual, signAdminToken, verifyAdminToken } from "./lib/adminToken.js";
+import { getTrialEnabled, setTrialEnabled } from "./lib/appSettings.js";
 import { createAztecoClient } from "./services/azteco.js";
 import { checkJellyfinUser } from "./services/jfago.js";
 import { createNowPaymentsInvoice, verifyNowPaymentsIpn } from "./services/nowpayments.js";
@@ -63,6 +64,11 @@ app.get("/health", async () => ({ ok: true, shop: config.SHOP_NAME }));
 app.get("/pay/api/products", async () => defaultPlans.map(serializePlan));
 
 app.get("/pay/api/azteco/options", async () => aztecoOptions);
+
+// Read-only switch for the external Discord trial bot: it asks here before
+// handing out a trial. Public on purpose — it reveals nothing beyond what the
+// bot's own behavior already shows.
+app.get("/pay/api/trial/status", async () => ({ enabled: await getTrialEnabled(prisma.appSetting) }));
 
 app.post("/pay/api/user/check", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request) => {
   const body = z.object({ username: z.string().min(1).max(80) }).parse(request.body);
@@ -250,6 +256,16 @@ app.post("/admin/api/login", { config: { rateLimit: { max: 5, timeWindow: "5 min
   if (!(userOk && passOk)) return reply.code(401).send({ error: "invalid_credentials" });
   const ttl = 8 * 60 * 60;
   return { token: signAdminToken(body.username, config.ADMIN_SESSION_SECRET, ttl), expires_in: ttl };
+});
+
+app.get("/admin/api/settings", { preHandler: requireAdmin }, async () => ({
+  trial_enabled: await getTrialEnabled(prisma.appSetting)
+}));
+
+app.post("/admin/api/settings/trial", { preHandler: requireAdmin }, async (request) => {
+  const body = z.object({ enabled: z.boolean() }).parse(request.body);
+  await setTrialEnabled(prisma.appSetting, body.enabled);
+  return { ok: true, enabled: body.enabled };
 });
 
 app.post("/admin/api/credit", { preHandler: requireAdmin }, async (request, reply) => {

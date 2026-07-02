@@ -800,6 +800,60 @@ html:not(.en) [lang="en"] { display: none !important; }
   box-shadow: 0 16px 36px -14px rgba(88, 101, 242, 0.9);
 }
 
+/* ---------- admin toggle ---------- */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toggle-label {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.toggle-row .hint { display: block; margin-top: 2px; }
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--pill);
+  background: var(--glass-2);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.switch .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.switch.on {
+  background: rgba(56, 211, 159, 0.16);
+  border-color: rgba(56, 211, 159, 0.55);
+}
+
+.switch.on .knob {
+  transform: translateX(22px);
+  background: var(--green);
+}
+
+.switch:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* ---------- responsive ---------- */
 @media (max-width: 600px) {
   .page { padding: 22px 14px 44px; }

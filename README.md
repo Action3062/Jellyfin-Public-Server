@@ -36,13 +36,26 @@ npm run dev
 
 - `GET /pay/api/products`
 - `GET /pay/api/azteco/options`
+- `GET /pay/api/trial/status`
 - `POST /pay/api/user/check`
 - `POST /pay/api/nowpayments/create`
 - `GET /pay/api/nowpayments/status/:invoice_id`
 - `POST /pay/api/azteco/redeem`
 - `POST /pay/api/plex/invite`
 
+Admin (Bearer token from `POST /admin/api/login`):
+
+- `POST /admin/api/credit`
+- `GET /admin/api/settings`
+- `POST /admin/api/settings/trial`
+
 Legacy field note: `discord_user` carries the Jellyfin username by design.
+
+## Discord Trial Switch
+
+The admin panel (`/admin`) has a "Discord-Trials" toggle. Its state is stored in the `AppSetting` table (`discord_trial_enabled`, missing row = enabled) and exposed read-only at `GET /pay/api/trial/status` → `{ "enabled": true|false }`.
+
+The external Discord trial bot should call this endpoint before handing out a trial and refuse when `enabled` is `false` (e.g. "Trials sind derzeit deaktiviert"). Recommended: treat request errors as disabled (fail closed) so trials can't be farmed while the portal is down.
 
 ## Sandbox Notes
 
