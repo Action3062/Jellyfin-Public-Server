@@ -9,4 +9,5 @@ api/dist
 .env.local
 coverage
 *.log
+*.tsbuildinfo
 api/prisma/dev.db
