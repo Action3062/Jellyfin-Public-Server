@@ -40,7 +40,22 @@ echo "==> Synchronisiere Datenbankschema (prisma db push)"
 # Runs inside the api image so the container's DATABASE_URL (compose postgres)
 # is used. db push is additive-safe; it refuses destructive changes unless
 # forced, which fits this repo (no committed migration history).
-compose run --rm api npm --workspace api run prisma:push
+if ! compose run --rm api npm --workspace api run prisma:push; then
+  cat >&2 <<'HINT'
+
+FEHLER: Schema-Sync fehlgeschlagen.
+Häufigste Ursache bei "P1000 Authentication failed": Das Postgres-Volume behält
+das Passwort seiner ERSTEN Initialisierung — POSTGRES_PASSWORD in infra/.env
+wirkt nur auf ein leeres Volume. Optionen:
+  a) Daten behalten — Passwort im Container auf den .env-Wert setzen:
+     docker compose -f infra/docker-compose.yml exec postgres \
+       psql -U postgres -c "ALTER USER postgres WITH PASSWORD '<WERT_AUS_ENV>';"
+  b) Frische Installation (LÖSCHT ALLE DATEN):
+     docker compose -f infra/docker-compose.yml down && docker volume rm infra_postgres_data
+Danach dieses Script erneut ausführen.
+HINT
+  exit 1
+fi
 
 echo "==> Starte Stack"
 compose up -d
