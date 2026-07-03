@@ -73,7 +73,7 @@ Legacy field note: `discord_user` carries the Jellyfin username by design.
 - **Nutzer** — live jfa-go user list (expiry/disabled/source/revenue), expiring-soon quick-credit, enable/disable, per-user history, drift & abuse flags.
 - **Discord** — remote feature-flag toggles, support status, trial parameters, trial reset, funnel history, bot heartbeat.
 - **Betrieb** — integration health ampel, BullMQ queue monitor with retry, reconciliation warnings, audit log.
-- **Einstellungen** — trial toggle, TOTP 2FA setup, session countdown/refresh, absolute-expiry correction. Dark/light + installable PWA.
+- **Einstellungen** — trial toggle, TOTP 2FA setup, session countdown/refresh (tokens last 8h; refresh is capped at 7 days after the original login), absolute-expiry correction. Dark/light + installable PWA.
 
 State that isn't in the relational tables lives in `AppSetting` (trial toggle, feature flags, support status, trial params, bot heartbeat, TOTP). New tables: `AdminAuditLog`, `FunnelSnapshot`, `BotReport`, `BotCommand` — run `npm --workspace api run prisma:migrate` after pulling.
 

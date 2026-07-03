@@ -86,10 +86,16 @@ export function registerAdminRoutes(app: FastifyInstance, deps: { prisma: Prisma
     return { token: signAdminToken(body.username, config.ADMIN_SESSION_SECRET, TTL), expires_in: TTL };
   });
 
-  // Issue a fresh token from a still-valid one so long sessions don't 401 mid-edit.
-  app.post("/admin/api/refresh", { preHandler: requireAdmin }, async (request) => {
-    const sub = actorOf(request);
-    return { token: signAdminToken(sub, config.ADMIN_SESSION_SECRET, TTL), expires_in: TTL };
+  // Issue a fresh token from a still-valid one so long sessions don't 401
+  // mid-edit. The original login time (orig) is carried forward and capped:
+  // a stolen token cannot be kept alive indefinitely by refreshing it.
+  const MAX_SESSION_SECONDS = 7 * 24 * 60 * 60;
+  app.post("/admin/api/refresh", { preHandler: requireAdmin }, async (request, reply) => {
+    const claims = (request as AuthedRequest).adminClaims!;
+    const now = Math.floor(Date.now() / 1000);
+    const orig = claims.orig ?? now; // pre-upgrade tokens: start the absolute clock now
+    if (now - orig > MAX_SESSION_SECONDS) return reply.code(401).send({ error: "unauthorized" });
+    return { token: signAdminToken(claims.sub, config.ADMIN_SESSION_SECRET, TTL, orig), expires_in: TTL };
   });
 
   // ---- Two-factor ----------------------------------------------------------

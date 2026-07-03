@@ -11,10 +11,13 @@ function fromB64url(value: string) {
   return Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64");
 }
 
-export type AdminClaims = { sub: string; exp: number };
+// `orig` is the Unix time of the original LOGIN; refreshes carry it forward so
+// the session has an absolute lifetime regardless of how often it is renewed.
+export type AdminClaims = { sub: string; exp: number; orig?: number };
 
-export function signAdminToken(sub: string, secret: string, ttlSeconds: number) {
-  const claims: AdminClaims = { sub, exp: Math.floor(Date.now() / 1000) + ttlSeconds };
+export function signAdminToken(sub: string, secret: string, ttlSeconds: number, orig?: number) {
+  const now = Math.floor(Date.now() / 1000);
+  const claims: AdminClaims = { sub, exp: now + ttlSeconds, orig: orig ?? now };
   const data = b64url(Buffer.from(JSON.stringify(claims)));
   const sig = b64url(crypto.createHmac("sha256", secret).update(data).digest());
   return `${data}.${sig}`;
