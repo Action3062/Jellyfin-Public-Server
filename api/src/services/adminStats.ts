@@ -124,7 +124,7 @@ export function reconciliation(
 
   const dayAgo = now.getTime() - 24 * 60 * 60 * 1000;
   const stalePending = payments
-    .filter((p) => ["waiting", "confirming", "partially_paid", "sending"].includes(p.status))
+    .filter((p) => ["waiting", "confirming", "confirmed", "partially_paid", "sending"].includes(p.status))
     .filter((p) => p.createdAt.getTime() < dayAgo)
     .map((p) => ({ user: p.user, status: p.status, provider: p.provider, createdAt: p.createdAt.toISOString() }));
 
@@ -277,13 +277,15 @@ export async function userDirectory(prisma: PrismaClient, now = new Date()) {
 
 export async function userHistory(prisma: PrismaClient, username: string) {
   const name = username.trim();
-  const user = await prisma.user.findUnique({
-    where: { jellyfinUsername: name },
+  // Case-insensitive throughout: the jfa-go account name (source of the lookup)
+  // and the stored jellyfinUsername/payment.user can differ in casing.
+  const user = await prisma.user.findFirst({
+    where: { jellyfinUsername: { equals: name, mode: "insensitive" } },
     include: { subscriptions: { orderBy: { startsAt: "desc" } } }
   });
   const [payments, vouchers] = await Promise.all([
-    prisma.payment.findMany({ where: { user: name }, orderBy: { createdAt: "desc" } }),
-    prisma.voucherRedemption.findMany({ where: { user: name }, orderBy: { createdAt: "desc" } })
+    prisma.payment.findMany({ where: { user: { equals: name, mode: "insensitive" } }, orderBy: { createdAt: "desc" } }),
+    prisma.voucherRedemption.findMany({ where: { user: { equals: name, mode: "insensitive" } }, orderBy: { createdAt: "desc" } })
   ]);
   return {
     username: name,

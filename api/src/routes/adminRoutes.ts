@@ -140,9 +140,10 @@ export function registerAdminRoutes(app: FastifyInstance, deps: { prisma: Prisma
 
   app.get("/admin/api/payments", { preHandler: requireAdmin }, async (request) => {
     const q = z.object({
-      status: z.string().optional(),
-      provider: z.string().optional(),
-      user: z.string().optional(),
+      status: z.string().max(40).optional(),
+      // provider is a Prisma enum — reject unknown values with 400, not a 500.
+      provider: z.enum(["nowpayments", "azteco", "manual"]).optional(),
+      user: z.string().max(80).optional(),
       limit: z.coerce.number().int().min(1).max(500).default(100)
     }).parse(request.query);
     const where: Record<string, unknown> = {};
@@ -158,8 +159,17 @@ export function registerAdminRoutes(app: FastifyInstance, deps: { prisma: Prisma
   });
 
   app.get("/admin/api/webhooks", { preHandler: requireAdmin }, async (request) => {
-    const q = z.object({ unprocessed: z.coerce.boolean().optional(), limit: z.coerce.number().int().min(1).max(200).default(50) }).parse(request.query);
-    const where = q.unprocessed ? { processedAt: null } : {};
+    // z.coerce.boolean() treats any non-empty string as true ("false" -> true),
+    // so parse the flag explicitly. orderId filters server-side (Postgres JSON
+    // path) so the IPN drill-down finds events for any payment, not just recent.
+    const q = z.object({
+      unprocessed: z.enum(["true", "false"]).optional(),
+      orderId: z.string().max(120).optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(50)
+    }).parse(request.query);
+    const where: Record<string, unknown> = {};
+    if (q.unprocessed === "true") where.processedAt = null;
+    if (q.orderId) where.payload = { path: ["order_id"], equals: q.orderId };
     const rows = await prisma.webhookEvent.findMany({ where, orderBy: { id: "desc" }, take: q.limit });
     return rows.map((r) => ({ id: r.id, provider: r.provider, eventId: r.eventId, processedAt: r.processedAt?.toISOString() ?? null, payload: r.payload }));
   });
@@ -259,7 +269,7 @@ export function registerAdminRoutes(app: FastifyInstance, deps: { prisma: Prisma
 
   app.get("/admin/api/queue", { preHandler: requireAdmin }, async () => {
     const counts = await queue.getJobCounts("waiting", "active", "delayed", "failed", "completed");
-    const failed = await queue.getFailed(0, 25);
+    const failed = (await queue.getFailed(0, 25)).filter(Boolean);
     return {
       counts,
       failed: failed.map((job) => ({

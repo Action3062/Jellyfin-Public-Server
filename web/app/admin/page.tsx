@@ -55,6 +55,7 @@ export default function AdminPage() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<TabKey>("overview");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [creditPrefill, setCreditPrefill] = useState("");
 
   // login
   const [username, setUsername] = useState("");
@@ -104,7 +105,20 @@ export default function AdminPage() {
     return res;
   }, [logout]);
 
+  // GET helper for read-only views: throws (with the server's error code) on any
+  // non-2xx so a 500/503 shows an error state instead of crashing the tab when a
+  // handler reads `.kpis` off an error body.
+  const apiJson = useCallback(async <T,>(path: string): Promise<T> => {
+    const res = await api(path);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `http_${res.status}`);
+    }
+    return res.json();
+  }, [api]);
+
   async function login() {
+    if (loginBusy) return; // guard: Enter can fire while a request is in flight (login is rate-limited 5/5min)
     setLoginBusy(true);
     setLoginError("");
     try {
@@ -206,12 +220,12 @@ export default function AdminPage() {
                 ))}
               </nav>
 
-              {tab === "overview" && <OverviewTab api={api} />}
-              {tab === "credit" && <CreditTab api={api} />}
-              {tab === "payments" && <PaymentsTab api={api} />}
-              {tab === "users" && <UsersTab api={api} onQuickCredit={() => setTab("credit")} />}
-              {tab === "discord" && <DiscordTab api={api} />}
-              {tab === "ops" && <OpsTab api={api} />}
+              {tab === "overview" && <OverviewTab apiJson={apiJson} />}
+              {tab === "credit" && <CreditTab api={api} prefill={creditPrefill} onPrefillConsumed={() => setCreditPrefill("")} />}
+              {tab === "payments" && <PaymentsTab api={api} apiJson={apiJson} />}
+              {tab === "users" && <UsersTab api={api} apiJson={apiJson} onQuickCredit={(name) => { setCreditPrefill(name); setTab("credit"); }} />}
+              {tab === "discord" && <DiscordTab api={api} apiJson={apiJson} />}
+              {tab === "ops" && <OpsTab api={api} apiJson={apiJson} />}
               {tab === "settings" && <SettingsTab api={api} token={token} onLogout={logout} onToken={(t) => { sessionStorage.setItem(TOKEN_KEY, t); setToken(t); }} />}
             </>
           )}
@@ -222,6 +236,14 @@ export default function AdminPage() {
 }
 
 type Api = (path: string, opts?: RequestInit) => Promise<Response>;
+type ApiJson = <T = unknown>(path: string) => Promise<T>;
+
+/** Read a mutation Response: throws the server error code on non-2xx, else the parsed body. */
+async function okJson(res: Response): Promise<Record<string, unknown>> {
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || (body as { error?: string }).error) throw new Error((body as { error?: string }).error || `http_${res.status}`);
+  return body as Record<string, unknown>;
+}
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -305,12 +327,12 @@ function SegBar({ data }: { data: Array<{ name: string; total: number }> }) {
 // Overview
 // ---------------------------------------------------------------------------
 
-function OverviewTab({ api }: { api: Api }) {
+function OverviewTab({ apiJson }: { apiJson: ApiJson }) {
   const { data, error, loading } = useAsync(async () => {
     const [dash, recon, health] = await Promise.all([
-      api("/admin/api/dashboard").then((r) => r.json()),
-      api("/admin/api/reconciliation").then((r) => r.json()),
-      api("/admin/api/health").then((r) => r.json())
+      apiJson<any>("/admin/api/dashboard"),
+      apiJson<any>("/admin/api/reconciliation"),
+      apiJson<any>("/admin/api/health")
     ]);
     return { dash, recon, health };
   }, []);
@@ -369,9 +391,15 @@ function OverviewTab({ api }: { api: Api }) {
 
 type UserState = "idle" | "checking" | "found" | "missing" | "unverified";
 
-function CreditTab({ api }: { api: Api }) {
+function CreditTab({ api, prefill, onPrefillConsumed }: { api: Api; prefill: string; onPrefillConsumed: () => void }) {
   const [jfUser, setJfUser] = useState("");
   const [userState, setUserState] = useState<UserState>("idle");
+
+  // Prefill the username when arriving from the expiring-soon quick action.
+  useEffect(() => {
+    if (prefill) { setJfUser(prefill); onPrefillConsumed(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
   const [amount, setAmount] = useState("");
   const [days, setDays] = useState("");
   const [note, setNote] = useState("");
@@ -504,11 +532,12 @@ function CreditTab({ api }: { api: Api }) {
 // Payments + vouchers + webhook detail
 // ---------------------------------------------------------------------------
 
-function PaymentsTab({ api }: { api: Api }) {
+function PaymentsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
   const [status, setStatus] = useState("");
   const [provider, setProvider] = useState("");
   const [user, setUser] = useState("");
   const [detail, setDetail] = useState<unknown>(null);
+  const [exporting, setExporting] = useState(false);
 
   const { data, error, loading } = useAsync(async () => {
     const params = new URLSearchParams();
@@ -516,17 +545,34 @@ function PaymentsTab({ api }: { api: Api }) {
     if (provider) params.set("provider", provider);
     if (user) params.set("user", user);
     const [payments, vouchers] = await Promise.all([
-      api(`/admin/api/payments?${params.toString()}`).then((r) => r.json()),
-      api("/admin/api/vouchers").then((r) => r.json())
+      apiJson<any[]>(`/admin/api/payments?${params.toString()}`),
+      apiJson<any[]>("/admin/api/vouchers")
     ]);
     return { payments, vouchers };
   }, [status, provider, user]);
 
   async function showWebhooks(orderId: string) {
-    const res = await api("/admin/api/webhooks?limit=200");
-    const rows = await res.json();
-    const match = rows.filter((r: { payload?: { order_id?: string } }) => r.payload?.order_id === orderId);
-    setDetail(match.length ? match : { info: "Keine Webhook-Events zu dieser Bestellung." });
+    // Server-side filter by order_id so events are found regardless of age.
+    const rows = await apiJson<any[]>(`/admin/api/webhooks?orderId=${encodeURIComponent(orderId)}&limit=200`);
+    setDetail(rows.length ? rows : { info: "Keine Webhook-Events zu dieser Bestellung." });
+  }
+
+  // The CSV endpoint needs the Bearer token, so a plain link can't reach it:
+  // fetch it authenticated and hand the browser a blob download.
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const res = await api("/admin/api/export/payments.csv");
+      if (!res.ok) throw new Error("export_failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "payments.csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -534,7 +580,7 @@ function PaymentsTab({ api }: { api: Api }) {
       <section className="card pay-card">
         <div className="row-between">
           <div className="section-title" style={{ margin: 0 }}>Zahlungen</div>
-          <a className="ghost small" href="/admin/api/export/payments.csv">CSV-Export</a>
+          <button className="ghost small" onClick={exportCsv} disabled={exporting}>{exporting ? "…" : "CSV-Export"}</button>
         </div>
         <div className="filters">
           <select className="input" value={provider} onChange={(e) => setProvider(e.target.value)}>
@@ -569,15 +615,15 @@ function PaymentsTab({ api }: { api: Api }) {
 
       <section className="card pay-card" style={{ marginTop: 16 }}>
         <div className="section-title">Azteco-Gutscheine</div>
-        {loading ? null : (
+        {loading || !data ? null : (
           <div className="table-scroll">
             <table className="table">
               <thead><tr><th>Datum</th><th>Nutzer</th><th>Wert</th><th>Status</th></tr></thead>
               <tbody>
-                {data!.vouchers.map((v: { id: string; createdAt: string; user: string; valueEur: number; status: string }) => (
+                {data.vouchers.map((v: { id: string; createdAt: string; user: string; valueEur: number; status: string }) => (
                   <tr key={v.id}><td>{fmtDate(v.createdAt)}</td><td>{v.user}</td><td className="num">{v.valueEur ? fmtEur(v.valueEur) : "—"}</td><td><StatusBadge status={v.status} /></td></tr>
                 ))}
-                {!data!.vouchers.length && <tr><td colSpan={4} className="hint">Keine Einlösungen.</td></tr>}
+                {!data.vouchers.length && <tr><td colSpan={4} className="hint">Keine Einlösungen.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -597,17 +643,21 @@ function PaymentsTab({ api }: { api: Api }) {
 // Users
 // ---------------------------------------------------------------------------
 
-function UsersTab({ api, onQuickCredit }: { api: Api; onQuickCredit: () => void }) {
+function UsersTab({ api, apiJson, onQuickCredit }: { api: Api; apiJson: ApiJson; onQuickCredit: (name: string) => void }) {
   const [q, setQ] = useState("");
   const [busyUser, setBusyUser] = useState("");
   const [historyFor, setHistoryFor] = useState<string | null>(null);
-  const { data, error, loading, reload } = useAsync(async () => api("/admin/api/users").then((r) => r.json()), []);
+  const [actionError, setActionError] = useState("");
+  const { data, error, loading, reload } = useAsync(async () => apiJson<any>("/admin/api/users"), []);
 
   async function toggleEnabled(name: string, enabled: boolean) {
     setBusyUser(name);
+    setActionError("");
     try {
-      await api("/admin/api/users/enable", { method: "POST", body: JSON.stringify({ username: name, enabled }) });
+      await okJson(await api("/admin/api/users/enable", { method: "POST", body: JSON.stringify({ username: name, enabled }) }));
       reload();
+    } catch (e) {
+      setActionError(errorText(e instanceof Error ? e.message : "error"));
     } finally {
       setBusyUser("");
     }
@@ -625,12 +675,12 @@ function UsersTab({ api, onQuickCredit }: { api: Api; onQuickCredit: () => void 
           <div className="section-title">Läuft bald ab (14 Tage)</div>
           <div className="chips">
             {data!.expiringSoon.map((u: { user: string; daysLeft: number }) => (
-              <button key={u.user} className="chip" onClick={() => { navigator.clipboard?.writeText(u.user); onQuickCredit(); }} title="Name kopieren & zur Gutschrift">
+              <button key={u.user} className="chip" onClick={() => onQuickCredit(u.user)} title="Zur Gutschrift mit vorausgefülltem Namen">
                 {u.user} <span className="chip-badge">{u.daysLeft}d</span>
               </button>
             ))}
           </div>
-          <p className="hint" style={{ marginTop: 8 }}>Klick kopiert den Namen und springt zur Gutschrift.</p>
+          <p className="hint" style={{ marginTop: 8 }}>Klick springt zur Gutschrift mit vorausgefülltem Namen.</p>
         </section>
       )}
 
@@ -651,6 +701,7 @@ function UsersTab({ api, onQuickCredit }: { api: Api; onQuickCredit: () => void 
           <div className="section-title" style={{ margin: 0 }}>Nutzer ({users.length})</div>
           <input className="input" style={{ maxWidth: 200 }} placeholder="Suchen" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        {actionError && <div className="status error">{actionError}</div>}
         <div className="table-scroll">
           <table className="table">
             <thead><tr><th>Name</th><th>Läuft ab</th><th>Quelle</th><th>Umsatz</th><th></th></tr></thead>
@@ -675,13 +726,13 @@ function UsersTab({ api, onQuickCredit }: { api: Api; onQuickCredit: () => void 
         </div>
       </section>
 
-      {historyFor && <UserHistoryModal api={api} username={historyFor} onClose={() => setHistoryFor(null)} />}
+      {historyFor && <UserHistoryModal apiJson={apiJson} username={historyFor} onClose={() => setHistoryFor(null)} />}
     </>
   );
 }
 
-function UserHistoryModal({ api, username, onClose }: { api: Api; username: string; onClose: () => void }) {
-  const { data, loading } = useAsync(async () => api(`/admin/api/users/${encodeURIComponent(username)}`).then((r) => r.json()), [username]);
+function UserHistoryModal({ apiJson, username, onClose }: { apiJson: ApiJson; username: string; onClose: () => void }) {
+  const { data, loading } = useAsync(async () => apiJson<any>(`/admin/api/users/${encodeURIComponent(username)}`), [username]);
   return (
     <Modal onClose={onClose} title={`Verlauf: ${username}`}>
       {loading || !data ? <Loading /> : (
@@ -698,6 +749,16 @@ function UserHistoryModal({ api, username, onClose }: { api: Api; username: stri
               <tr key={i}><td>{fmtDate(p.createdAt)}</td><td>{p.provider}</td><td className="num">{fmtEur(p.amountEur)}</td><td><StatusBadge status={p.status} /></td></tr>
             )) : <tr><td className="hint">Keine.</td></tr>}
           </tbody></table>
+          {data.vouchers?.length > 0 && (
+            <>
+              <div className="section-title" style={{ marginTop: 14 }}>Gutschein-Versuche</div>
+              <table className="table"><tbody>
+                {data.vouchers.map((v: { status: string; valueEur: number; createdAt: string }, i: number) => (
+                  <tr key={i}><td>{fmtDate(v.createdAt)}</td><td className="num">{v.valueEur ? fmtEur(v.valueEur) : "—"}</td><td><StatusBadge status={v.status} /></td></tr>
+                ))}
+              </tbody></table>
+            </>
+          )}
         </>
       )}
     </Modal>
@@ -718,23 +779,35 @@ const FLAG_LABELS: Record<string, string> = {
   new_account_protection: "Neue-Konten-Schutz"
 };
 
-function DiscordTab({ api }: { api: Api }) {
-  const { data, error, loading, reload } = useAsync(async () => api("/admin/api/bot").then((r) => r.json()), []);
+function DiscordTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
+  const { data, error, loading, reload } = useAsync(async () => apiJson<any>("/admin/api/bot"), []);
   const [resetTarget, setResetTarget] = useState("");
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState<{ kind: string; text: string } | null>(null);
 
   async function setFlag(name: string, value: boolean | null) {
-    await api("/admin/api/bot/flags", { method: "POST", body: JSON.stringify({ name, value }) });
-    reload();
+    try {
+      await okJson(await api("/admin/api/bot/flags", { method: "POST", body: JSON.stringify({ name, value }) }));
+      reload();
+    } catch (e) {
+      setNote({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
+    }
   }
   async function saveSupport(status: string, message: string) {
-    await api("/admin/api/bot/support", { method: "POST", body: JSON.stringify({ status, message }) });
-    setNote("Support-Status gespeichert."); reload();
+    try {
+      await okJson(await api("/admin/api/bot/support", { method: "POST", body: JSON.stringify({ status, message }) }));
+      setNote({ kind: "success", text: "Support-Status gespeichert." }); reload();
+    } catch (e) {
+      setNote({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
+    }
   }
   async function resetTrial() {
     if (!resetTarget.trim()) return;
-    await api("/admin/api/bot/command", { method: "POST", body: JSON.stringify({ kind: "trial_reset", target: resetTarget.trim() }) });
-    setResetTarget(""); setNote("Trial-Reset in Auftrag gegeben — der Bot führt ihn beim nächsten Poll aus.");
+    try {
+      await okJson(await api("/admin/api/bot/command", { method: "POST", body: JSON.stringify({ kind: "trial_reset", target: resetTarget.trim() }) }));
+      setResetTarget(""); setNote({ kind: "success", text: "Trial-Reset in Auftrag gegeben — der Bot führt ihn beim nächsten Poll aus." });
+    } catch (e) {
+      setNote({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
+    }
   }
 
   if (loading) return <Loading />;
@@ -779,6 +852,28 @@ function DiscordTab({ api }: { api: Api }) {
         <button className="primary" onClick={resetTrial} disabled={!resetTarget.trim()}><RefreshCw size={16} /> Reset beauftragen</button>
       </section>
 
+      {data!.tickets?.tickets?.length > 0 && (
+        <section className="card pay-card" style={{ marginTop: 16 }}>
+          <div className="section-title">Offene Tickets ({data!.tickets.tickets.length})</div>
+          <div className="table-scroll">
+            <table className="table">
+              <thead><tr><th>#</th><th>Kategorie</th><th>Priorität</th><th>Betreff</th></tr></thead>
+              <tbody>
+                {data!.tickets.tickets.slice(0, 20).map((t: { number: number; category: string; priority: string | null; subject: string }, i: number) => (
+                  <tr key={i}><td>{t.number}</td><td className="hint">{t.category}</td><td>{t.priority ? <span className={`badge ${t.priority === "urgent" || t.priority === "high" ? "bad" : "muted"}`}>{t.priority}</span> : "—"}</td><td>{t.subject}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {data!.trials?.entries?.length > 0 && (
+        <div className="status info" style={{ marginTop: 16 }}>
+          {data!.trials.entries.length} aktive Trial-/Abo-Einträge gemeldet (Stand {fmtDate(data!.trials.updatedAt)}).
+        </div>
+      )}
+
       {data!.funnel?.length > 0 && (
         <section className="card pay-card" style={{ marginTop: 16 }}>
           <div className="section-title">Funnel-Verlauf</div>
@@ -795,7 +890,7 @@ function DiscordTab({ api }: { api: Api }) {
         </section>
       )}
 
-      {note && <div className="status success" style={{ marginTop: 14 }}>{note}</div>}
+      {note && <div className={`status ${note.kind}`} style={{ marginTop: 14 }}>{note.text}</div>}
     </>
   );
 }
@@ -824,15 +919,21 @@ function SupportCard({ support, onSave }: { support: { status: string; message: 
 function TrialParamsCard({ api, params, onSaved }: { api: Api; params: { trialHours: number | null; nudgeHours: number | null }; onSaved: () => void }) {
   const [trialHours, setTrialHours] = useState(params.trialHours?.toString() ?? "");
   const [nudgeHours, setNudgeHours] = useState(params.nudgeHours?.toString() ?? "");
+  const [err, setErr] = useState("");
   async function save() {
-    await api("/admin/api/bot/trial-params", {
-      method: "POST",
-      body: JSON.stringify({
-        trialHours: trialHours.trim() ? Number(trialHours) : null,
-        nudgeHours: nudgeHours.trim() ? Number(nudgeHours) : null
-      })
-    });
-    onSaved();
+    setErr("");
+    try {
+      await okJson(await api("/admin/api/bot/trial-params", {
+        method: "POST",
+        body: JSON.stringify({
+          trialHours: trialHours.trim() ? Number(trialHours) : null,
+          nudgeHours: nudgeHours.trim() ? Number(nudgeHours) : null
+        })
+      }));
+      onSaved();
+    } catch (e) {
+      setErr(errorText(e instanceof Error ? e.message : "error"));
+    }
   }
   return (
     <section className="card pay-card" style={{ marginTop: 16 }}>
@@ -844,6 +945,7 @@ function TrialParamsCard({ api, params, onSaved }: { api: Api; params: { trialHo
           <input className="input" inputMode="numeric" value={nudgeHours} placeholder="6" onChange={(e) => setNudgeHours(e.target.value.replace(/[^0-9]/g, ""))} /></div>
       </div>
       <button className="primary" onClick={save}>Speichern</button>
+      {err && <div className="status error">{err}</div>}
     </section>
   );
 }
@@ -852,20 +954,23 @@ function TrialParamsCard({ api, params, onSaved }: { api: Api; params: { trialHo
 // Ops
 // ---------------------------------------------------------------------------
 
-function OpsTab({ api }: { api: Api }) {
+function OpsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
   const { data, error, loading, reload } = useAsync(async () => {
     const [health, queue, recon, audit] = await Promise.all([
-      api("/admin/api/health").then((r) => r.json()),
-      api("/admin/api/queue").then((r) => r.json()),
-      api("/admin/api/reconciliation").then((r) => r.json()),
-      api("/admin/api/audit").then((r) => r.json())
+      apiJson<any>("/admin/api/health"),
+      apiJson<any>("/admin/api/queue"),
+      apiJson<any>("/admin/api/reconciliation"),
+      apiJson<any>("/admin/api/audit")
     ]);
     return { health, queue, recon, audit };
   }, []);
 
   async function retry(jobId: string) {
-    await api("/admin/api/queue/retry", { method: "POST", body: JSON.stringify({ jobId }) });
-    reload();
+    try {
+      await okJson(await api("/admin/api/queue/retry", { method: "POST", body: JSON.stringify({ jobId }) }));
+    } finally {
+      reload();
+    }
   }
 
   if (loading) return <Loading />;
@@ -970,9 +1075,14 @@ function SettingsTab({ api, token, onToken }: { api: Api; token: string; onToken
     if (trialEnabled === null || trialBusy) return;
     const next = !trialEnabled;
     setTrialBusy(true);
+    setMsg("");
     try {
-      await api("/admin/api/settings/trial", { method: "POST", body: JSON.stringify({ enabled: next }) });
+      // Only reflect the new state after the server confirms it — otherwise the
+      // panel could show trials disabled while the bot still hands them out.
+      await okJson(await api("/admin/api/settings/trial", { method: "POST", body: JSON.stringify({ enabled: next }) }));
       setTrialEnabled(next);
+    } catch (e) {
+      setMsg(errorText(e instanceof Error ? e.message : "error"));
     } finally {
       setTrialBusy(false);
     }

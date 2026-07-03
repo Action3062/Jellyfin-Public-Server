@@ -81,14 +81,18 @@ describe("reconciliation", () => {
     const payments = [
       pay({ user: "paid", amountEur: 10, createdAt: day("2026-06-01T00:00:00Z") }),
       pay({ user: "missing", amountEur: 10, createdAt: day("2026-06-01T00:00:00Z") }),
-      pay({ user: "stale", status: "waiting", createdAt: day("2026-06-01T00:00:00Z") })
+      pay({ user: "stale", status: "waiting", createdAt: day("2026-06-01T00:00:00Z") }),
+      // A payment stuck at "confirmed" (on-chain confirmed but never finished) must also surface.
+      pay({ user: "stuck", status: "confirmed", createdAt: day("2026-06-01T00:00:00Z") }),
+      // Recent pending must NOT surface (only >24h old).
+      pay({ user: "fresh", status: "waiting", createdAt: NOW })
     ];
     const subs: SubLike[] = [
       { userId: "1", jellyfinUsername: "paid", expiresAt: NOW, createdAt: day("2026-06-01T00:05:00Z"), source: "manual" }
     ];
     const r = reconciliation(payments, subs, 2, NOW);
     expect(r.creditedMissing.map((c) => c.user)).toEqual(["missing"]);
-    expect(r.stalePending.map((c) => c.user)).toEqual(["stale"]);
+    expect(r.stalePending.map((c) => c.user).sort()).toEqual(["stale", "stuck"]);
     expect(r.unprocessedWebhooks).toBe(2);
   });
 });

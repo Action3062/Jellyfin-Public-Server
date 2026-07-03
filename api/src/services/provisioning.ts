@@ -20,6 +20,12 @@ export async function setManualExpiry(
     create: { jellyfinUsername: username }
   });
   await extendJellyfinExpiry(username, expiresAt);
+  // Supersede existing active subscriptions so the next stacking credit starts
+  // from THIS corrected expiry, not an older (possibly later) active row.
+  await prisma.subscription.updateMany({
+    where: { userId: user.id, status: "active" },
+    data: { status: "expired" }
+  });
   await prisma.subscription.create({
     data: {
       userId: user.id,
