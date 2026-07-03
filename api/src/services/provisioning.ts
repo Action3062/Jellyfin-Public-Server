@@ -19,23 +19,36 @@ export async function setManualExpiry(
     update: {},
     create: { jellyfinUsername: username }
   });
+  // Case-variant duplicate User rows can exist (checkout usernames are
+  // buyer-typed and only checked case-insensitively), so supersede active subs
+  // across ALL rows that match case-insensitively — otherwise the next stacking
+  // credit could resume from a stale row stored under a different casing.
+  const related = await prisma.user.findMany({
+    where: { jellyfinUsername: { equals: username, mode: "insensitive" } },
+    select: { id: true }
+  });
+  const userIds = Array.from(new Set([user.id, ...related.map((r) => r.id)]));
+  // jfa-go holds the authoritative expiry; set it first so a later DB failure
+  // still leaves the account showing the corrected date.
   await extendJellyfinExpiry(username, expiresAt);
-  // Supersede existing active subscriptions so the next stacking credit starts
-  // from THIS corrected expiry, not an older (possibly later) active row.
-  await prisma.subscription.updateMany({
-    where: { userId: user.id, status: "active" },
-    data: { status: "expired" }
-  });
-  await prisma.subscription.create({
-    data: {
-      userId: user.id,
-      plan: note ? `korrektur: ${note}` : "korrektur",
-      source: "manual",
-      startsAt: new Date(),
-      expiresAt,
-      status: "active"
-    }
-  });
+  // Atomic: expire the old active rows and record the correction together, so a
+  // mid-flight failure can't leave the user with zero active subscriptions.
+  await prisma.$transaction([
+    prisma.subscription.updateMany({
+      where: { userId: { in: userIds }, status: "active" },
+      data: { status: "expired" }
+    }),
+    prisma.subscription.create({
+      data: {
+        userId: user.id,
+        plan: note ? `korrektur: ${note}` : "korrektur",
+        source: "manual",
+        startsAt: new Date(),
+        expiresAt,
+        status: "active"
+      }
+    })
+  ]);
   return { expiresAt };
 }
 

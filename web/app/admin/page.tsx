@@ -226,7 +226,7 @@ export default function AdminPage() {
               {tab === "users" && <UsersTab api={api} apiJson={apiJson} onQuickCredit={(name) => { setCreditPrefill(name); setTab("credit"); }} />}
               {tab === "discord" && <DiscordTab api={api} apiJson={apiJson} />}
               {tab === "ops" && <OpsTab api={api} apiJson={apiJson} />}
-              {tab === "settings" && <SettingsTab api={api} token={token} onLogout={logout} onToken={(t) => { sessionStorage.setItem(TOKEN_KEY, t); setToken(t); }} />}
+              {tab === "settings" && <SettingsTab api={api} apiJson={apiJson} token={token} onLogout={logout} onToken={(t) => { sessionStorage.setItem(TOKEN_KEY, t); setToken(t); }} />}
             </>
           )}
         </div>
@@ -419,6 +419,10 @@ function CreditTab({ api, prefill, onPrefillConsumed }: { api: Api; prefill: str
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username: jfUser.trim() })
         });
+        if (seq !== checkSeq.current) return;
+        // On a transient error (e.g. 429 rate limit) show "could not verify"
+        // rather than a wrong "not found".
+        if (!res.ok) { setUserState("unverified"); return; }
         const data = await res.json();
         if (seq !== checkSeq.current) return;
         if (data.verified === false) setUserState("unverified");
@@ -538,6 +542,7 @@ function PaymentsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
   const [user, setUser] = useState("");
   const [detail, setDetail] = useState<unknown>(null);
   const [exporting, setExporting] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const { data, error, loading } = useAsync(async () => {
     const params = new URLSearchParams();
@@ -552,24 +557,32 @@ function PaymentsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
   }, [status, provider, user]);
 
   async function showWebhooks(orderId: string) {
-    // Server-side filter by order_id so events are found regardless of age.
-    const rows = await apiJson<any[]>(`/admin/api/webhooks?orderId=${encodeURIComponent(orderId)}&limit=200`);
-    setDetail(rows.length ? rows : { info: "Keine Webhook-Events zu dieser Bestellung." });
+    setActionError("");
+    try {
+      // Server-side filter by order_id so events are found regardless of age.
+      const rows = await apiJson<any[]>(`/admin/api/webhooks?orderId=${encodeURIComponent(orderId)}&limit=200`);
+      setDetail(rows.length ? rows : { info: "Keine Webhook-Events zu dieser Bestellung." });
+    } catch (e) {
+      setActionError(errorText(e instanceof Error ? e.message : "error"));
+    }
   }
 
   // The CSV endpoint needs the Bearer token, so a plain link can't reach it:
   // fetch it authenticated and hand the browser a blob download.
   async function exportCsv() {
     setExporting(true);
+    setActionError("");
     try {
       const res = await api("/admin/api/export/payments.csv");
-      if (!res.ok) throw new Error("export_failed");
+      if (!res.ok) throw new Error(`http_${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = "payments.csv";
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
+    } catch (e) {
+      setActionError(errorText(e instanceof Error ? e.message : "error"));
     } finally {
       setExporting(false);
     }
@@ -591,6 +604,7 @@ function PaymentsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
           </select>
           <input className="input" placeholder="Nutzer suchen" value={user} onChange={(e) => setUser(e.target.value)} />
         </div>
+        {actionError && <div className="status error">{actionError}</div>}
         {loading ? <Loading /> : error ? <div className="status error">{error}</div> : (
           <div className="table-scroll">
             <table className="table">
@@ -1048,19 +1062,21 @@ function OpsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
 // Settings (trial toggle, 2FA, session, absolute expiry)
 // ---------------------------------------------------------------------------
 
-function SettingsTab({ api, token, onToken }: { api: Api; token: string; onToken: (t: string) => void; onLogout: () => void }) {
+function SettingsTab({ api, apiJson, token, onToken }: { api: Api; apiJson: ApiJson; token: string; onToken: (t: string) => void; onLogout: () => void }) {
   const [trialEnabled, setTrialEnabled] = useState<boolean | null>(null);
   const [trialBusy, setTrialBusy] = useState(false);
   const [twofa, setTwofa] = useState<{ enabled: boolean; configured: boolean } | null>(null);
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
   const [code, setCode] = useState("");
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [expLeft, setExpLeft] = useState<number | null>(null);
 
   useEffect(() => {
-    api("/admin/api/settings").then((r) => r.json()).then((d) => setTrialEnabled(d.trial_enabled)).catch(() => undefined);
-    api("/admin/api/2fa/status").then((r) => r.json()).then(setTwofa).catch(() => undefined);
-  }, [api]);
+    // apiJson throws on non-2xx, so an error leaves the state at its loading
+    // sentinel (null) instead of parsing an error body as real settings.
+    apiJson<{ trial_enabled: boolean }>("/admin/api/settings").then((d) => setTrialEnabled(d.trial_enabled)).catch(() => undefined);
+    apiJson<{ enabled: boolean; configured: boolean }>("/admin/api/2fa/status").then(setTwofa).catch(() => undefined);
+  }, [apiJson]);
 
   useEffect(() => {
     const exp = tokenExpiry(token);
@@ -1075,36 +1091,53 @@ function SettingsTab({ api, token, onToken }: { api: Api; token: string; onToken
     if (trialEnabled === null || trialBusy) return;
     const next = !trialEnabled;
     setTrialBusy(true);
-    setMsg("");
+    setMsg(null);
     try {
       // Only reflect the new state after the server confirms it — otherwise the
       // panel could show trials disabled while the bot still hands them out.
       await okJson(await api("/admin/api/settings/trial", { method: "POST", body: JSON.stringify({ enabled: next }) }));
       setTrialEnabled(next);
     } catch (e) {
-      setMsg(errorText(e instanceof Error ? e.message : "error"));
+      setMsg({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
     } finally {
       setTrialBusy(false);
     }
   }
   async function refreshSession() {
-    const res = await api("/admin/api/refresh", { method: "POST" });
-    const data = await res.json();
-    if (data.token) { onToken(data.token); setMsg("Sitzung verlängert."); }
+    setMsg(null);
+    try {
+      const data = await okJson(await api("/admin/api/refresh", { method: "POST" }));
+      if (data.token) { onToken(data.token as string); setMsg({ kind: "success", text: "Sitzung verlängert." }); }
+    } catch (e) {
+      setMsg({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
+    }
   }
   async function start2fa() {
-    const res = await api("/admin/api/2fa/setup", { method: "POST" });
-    setSetup(await res.json());
+    setMsg(null);
+    try {
+      const data = await okJson(await api("/admin/api/2fa/setup", { method: "POST" }));
+      setSetup({ secret: data.secret as string, otpauth_uri: data.otpauth_uri as string });
+    } catch (e) {
+      setMsg({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
+    }
   }
   async function enable2fa() {
-    const res = await api("/admin/api/2fa/enable", { method: "POST", body: JSON.stringify({ token: code.trim() }) });
-    const data = await res.json();
-    if (data.ok) { setTwofa({ enabled: true, configured: true }); setSetup(null); setCode(""); setMsg("2FA aktiviert."); }
-    else setMsg(errorText(data.error || "error"));
+    setMsg(null);
+    try {
+      await okJson(await api("/admin/api/2fa/enable", { method: "POST", body: JSON.stringify({ token: code.trim() }) }));
+      setTwofa({ enabled: true, configured: true }); setSetup(null); setCode(""); setMsg({ kind: "success", text: "2FA aktiviert." });
+    } catch (e) {
+      setMsg({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
+    }
   }
   async function disable2fa() {
-    await api("/admin/api/2fa/disable", { method: "POST" });
-    setTwofa({ enabled: false, configured: true }); setMsg("2FA deaktiviert.");
+    setMsg(null);
+    try {
+      await okJson(await api("/admin/api/2fa/disable", { method: "POST" }));
+      setTwofa({ enabled: false, configured: true }); setMsg({ kind: "success", text: "2FA deaktiviert." });
+    } catch (e) {
+      setMsg({ kind: "error", text: errorText(e instanceof Error ? e.message : "error") });
+    }
   }
 
   return (
@@ -1158,7 +1191,7 @@ function SettingsTab({ api, token, onToken }: { api: Api; token: string; onToken
 
       <ExpirySetCard api={api} />
 
-      {msg && <div className="status success" style={{ marginTop: 14 }}>{msg}</div>}
+      {msg && <div className={`status ${msg.kind}`} style={{ marginTop: 14 }}>{msg.text}</div>}
     </>
   );
 }

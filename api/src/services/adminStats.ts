@@ -234,7 +234,9 @@ export async function reconciliationData(prisma: PrismaClient, now = new Date())
 export async function userDirectory(prisma: PrismaClient, now = new Date()) {
   const [jfaUsers, subRows, payments] = await Promise.all([
     listJfaUsersDetailed(),
-    prisma.subscription.findMany({ include: { user: true }, orderBy: { expiresAt: "desc" } }),
+    // Only active rows: a manual correction expires the superseded (later-dated)
+    // rows, so restricting to active keeps the directory/drift in sync with it.
+    prisma.subscription.findMany({ where: { status: "active" }, include: { user: true }, orderBy: { expiresAt: "desc" } }),
     loadPayments(prisma)
   ]);
 
@@ -278,18 +280,23 @@ export async function userDirectory(prisma: PrismaClient, now = new Date()) {
 export async function userHistory(prisma: PrismaClient, username: string) {
   const name = username.trim();
   // Case-insensitive throughout: the jfa-go account name (source of the lookup)
-  // and the stored jellyfinUsername/payment.user can differ in casing.
-  const user = await prisma.user.findFirst({
-    where: { jellyfinUsername: { equals: name, mode: "insensitive" } },
-    include: { subscriptions: { orderBy: { startsAt: "desc" } } }
-  });
-  const [payments, vouchers] = await Promise.all([
+  // and the stored jellyfinUsername/payment.user can differ in casing. Aggregate
+  // subscriptions across ALL matching User rows so a split-casing account shows
+  // its full history (payments/vouchers already merge across variants).
+  const [users, payments, vouchers] = await Promise.all([
+    prisma.user.findMany({
+      where: { jellyfinUsername: { equals: name, mode: "insensitive" } },
+      include: { subscriptions: true }
+    }),
     prisma.payment.findMany({ where: { user: { equals: name, mode: "insensitive" } }, orderBy: { createdAt: "desc" } }),
     prisma.voucherRedemption.findMany({ where: { user: { equals: name, mode: "insensitive" } }, orderBy: { createdAt: "desc" } })
   ]);
+  const subscriptions = users
+    .flatMap((u) => u.subscriptions)
+    .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime());
   return {
     username: name,
-    subscriptions: (user?.subscriptions ?? []).map((s) => ({
+    subscriptions: subscriptions.map((s) => ({
       plan: s.plan,
       source: s.source,
       startsAt: s.startsAt.toISOString(),
