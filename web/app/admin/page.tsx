@@ -22,7 +22,8 @@ function errorText(code: string) {
     admin_not_configured: "Admin ist nicht konfiguriert (ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_SESSION_SECRET setzen)",
     unauthorized: "Sitzung abgelaufen — bitte neu anmelden",
     rate_limited: "Zu viele Versuche — bitte kurz warten",
-    jfa_error: "jfa-go-Fehler — Aktion nicht möglich"
+    jfa_error: "jfa-go-Fehler — Aktion nicht möglich",
+    job_not_found: "Job nicht gefunden — Liste wird aktualisiert"
   };
   return map[code] || code;
 }
@@ -969,6 +970,7 @@ function TrialParamsCard({ api, params, onSaved }: { api: Api; params: { trialHo
 // ---------------------------------------------------------------------------
 
 function OpsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
+  const [actionError, setActionError] = useState("");
   const { data, error, loading, reload } = useAsync(async () => {
     const [health, queue, recon, audit] = await Promise.all([
       apiJson<any>("/admin/api/health"),
@@ -980,8 +982,11 @@ function OpsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
   }, []);
 
   async function retry(jobId: string) {
+    setActionError("");
     try {
       await okJson(await api("/admin/api/queue/retry", { method: "POST", body: JSON.stringify({ jobId }) }));
+    } catch (e) {
+      setActionError(errorText(e instanceof Error ? e.message : "error"));
     } finally {
       reload();
     }
@@ -1005,6 +1010,7 @@ function OpsTab({ api, apiJson }: { api: Api; apiJson: ApiJson }) {
 
       <section className="card pay-card" style={{ marginTop: 16 }}>
         <div className="section-title">Provisioning-Queue</div>
+        {actionError && <div className="status error">{actionError}</div>}
         <div className="grid stats small">
           {Object.entries(data!.queue.counts as Record<string, number>).map(([k, v]) => (
             <Stat key={k} label={k} value={String(v)} />
