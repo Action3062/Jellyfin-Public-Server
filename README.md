@@ -32,6 +32,17 @@ npm --workspace api run prisma:migrate
 npm run dev
 ```
 
+## Deployment
+
+`./infra/deploy.sh` deploys the full stack (web, api, postgres, redis) on the host. Requirements: docker with the compose plugin (or docker-compose v1) and a filled-in `infra/.env`. It runs, in order:
+
+1. `git pull --ff-only` (skip with `--no-pull`)
+2. `docker compose build`
+3. starts postgres/redis and syncs the DB schema via `prisma db push` (this repo keeps no committed migration history, so push is the schema-sync mechanism — it refuses destructive changes unless forced)
+4. `docker compose up -d`, then health-checks the API (`:4000/health`) and web (`:3000`)
+
+jfa-go and the Discord bot run as separate containers and are not touched by the script.
+
 ## API Contract
 
 - `GET /pay/api/products`
