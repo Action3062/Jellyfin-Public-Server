@@ -65,6 +65,7 @@ export type JfaUserDetailed = {
   discordId?: string;
   lastActive?: number; // Unix seconds
   email?: string;
+  label?: string; // jfa-go account label; the Discord bot tags trials with "Trial"
 };
 
 function pick(obj: Record<string, unknown>, ...keys: string[]) {
@@ -87,6 +88,7 @@ export async function listJfaUsersDetailed(): Promise<JfaUserDetailed[]> {
       const discord = pick(entry, "discord_id", "discordID", "DiscordID");
       const lastActive = Number(pick(entry, "last_active", "lastActive", "LastActive") ?? 0);
       const email = pick(entry, "email", "Email");
+      const label = pick(entry, "label", "Label");
       return {
         id: String(pick(entry, "id", "ID") ?? ""),
         name: String(pick(entry, "name", "Name") ?? ""),
@@ -94,7 +96,8 @@ export async function listJfaUsersDetailed(): Promise<JfaUserDetailed[]> {
         disabled: Boolean(pick(entry, "disabled", "Disabled") ?? false),
         discordId: discord ? String(discord) : undefined,
         lastActive: Number.isFinite(lastActive) && lastActive > 0 ? lastActive : undefined,
-        email: email ? String(email) : undefined
+        email: email ? String(email) : undefined,
+        label: label ? String(label) : undefined
       };
     })
     .filter((entry) => entry.name);

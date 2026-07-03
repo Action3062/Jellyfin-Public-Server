@@ -136,10 +136,11 @@ export function driftReport(jfaUsers: JfaUserDetailed[], latestExpiryByUser: Map
   for (const u of jfaUsers) {
     const dbExpiry = latestExpiryByUser.get(u.name.toLowerCase()) ?? null;
     const jfaExpiry = u.expiry > 0 ? new Date(u.expiry * 1000) : null;
-    if (!dbExpiry && !jfaExpiry) continue;
-    const jfaMs = jfaExpiry ? jfaExpiry.getTime() : 0;
-    const dbMs = dbExpiry ? dbExpiry.getTime() : 0;
-    const deltaHours = Math.round(Math.abs(jfaMs - dbMs) / 3_600_000);
+    // Drift is a disagreement between two recorded values. Accounts the portal
+    // has no subscription data for (legacy users, bot-created trials) are not
+    // drift — comparing against a missing side produced absurd ~56y deltas.
+    if (!dbExpiry || !jfaExpiry) continue;
+    const deltaHours = Math.round(Math.abs(jfaExpiry.getTime() - dbExpiry.getTime()) / 3_600_000);
     if (deltaHours > 24) {
       out.push({
         user: u.name,
@@ -166,19 +167,23 @@ export function abuseReport(jfaUsers: JfaUserDetailed[], payingUsers: Set<string
     .filter(([, names]) => names.length > 1)
     .map(([discordId, names]) => ({ discordId, accounts: names }));
 
-  // Active (not disabled, future expiry) accounts with no finished payment on record.
+  // Active (not disabled, future expiry) accounts with no finished payment on
+  // record. Trials are unpaid by design and excluded.
   const activeUnpaid = jfaUsers
-    .filter((u) => !u.disabled && u.expiry > 0 && u.expiry * 1000 > now.getTime())
+    .filter((u) => !u.disabled && u.expiry > 0 && u.expiry * 1000 > now.getTime() && !isTrialAccount(u))
     .filter((u) => !payingUsers.has(u.name.toLowerCase()))
     .map((u) => ({ user: u.name, expiry: new Date(u.expiry * 1000).toISOString() }));
 
   return { sharedDiscord, activeUnpaid };
 }
 
+const isTrialAccount = (u: JfaUserDetailed) => (u.label ?? "").toLowerCase() === "trial";
+
 export function expiringSoon(jfaUsers: JfaUserDetailed[], now: Date, withinDays: number) {
   const limit = now.getTime() + withinDays * 24 * 60 * 60 * 1000;
   return jfaUsers
-    .filter((u) => !u.disabled && u.expiry > 0)
+    // Trial accounts expire by design — only paying accounts belong here.
+    .filter((u) => !u.disabled && u.expiry > 0 && !isTrialAccount(u))
     .filter((u) => u.expiry * 1000 > now.getTime() && u.expiry * 1000 <= limit)
     .map((u) => ({
       user: u.name,
@@ -262,7 +267,8 @@ export async function userDirectory(prisma: PrismaClient, now = new Date()) {
       discordId: u.discordId ?? null,
       lastActive: u.lastActive ? new Date(u.lastActive * 1000).toISOString() : null,
       source: sub?.source ?? null,
-      revenueEur: revenueByUser.get(u.name.toLowerCase()) ?? 0
+      revenueEur: revenueByUser.get(u.name.toLowerCase()) ?? 0,
+      trial: isTrialAccount(u)
     };
   });
 

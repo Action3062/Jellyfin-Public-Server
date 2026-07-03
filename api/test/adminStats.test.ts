@@ -112,24 +112,36 @@ describe("driftReport", () => {
     expect(drift[0].user).toBe("drifted");
     expect(drift[0].deltaHours).toBeGreaterThan(24);
   });
+
+  it("does not flag accounts the portal has no data for (no 1970 comparison)", () => {
+    const users: JfaUserDetailed[] = [
+      // In jfa-go but never touched by the portal (legacy user / bot trial):
+      { id: "1", name: "legacy", expiry: Math.floor(NOW.getTime() / 1000) + 86400, disabled: false },
+      // In the DB but without expiry in jfa-go:
+      { id: "2", name: "noexpiry", expiry: 0, disabled: false }
+    ];
+    const db = new Map<string, Date>([["noexpiry", day("2026-08-01T00:00:00Z")]]);
+    expect(driftReport(users, db, NOW)).toHaveLength(0);
+  });
 });
 
 describe("abuseReport / expiringSoon", () => {
   const users: JfaUserDetailed[] = [
     { id: "1", name: "acc1", expiry: Math.floor(day("2026-07-05T00:00:00Z").getTime() / 1000), disabled: false, discordId: "d1" },
     { id: "2", name: "acc2", expiry: Math.floor(day("2026-07-20T00:00:00Z").getTime() / 1000), disabled: false, discordId: "d1" },
-    { id: "3", name: "paidacc", expiry: Math.floor(day("2026-07-06T00:00:00Z").getTime() / 1000), disabled: false }
+    { id: "3", name: "paidacc", expiry: Math.floor(day("2026-07-06T00:00:00Z").getTime() / 1000), disabled: false },
+    { id: "4", name: "trial1", expiry: Math.floor(day("2026-07-03T12:00:00Z").getTime() / 1000), disabled: false, label: "Trial" }
   ];
-  it("detects shared discord ids and unpaid active accounts", () => {
+  it("detects shared discord ids and unpaid active accounts, ignoring trials", () => {
     const paying = new Set(["paidacc"]);
     const r = abuseReport(users, paying, NOW);
     expect(r.sharedDiscord).toHaveLength(1);
     expect(r.sharedDiscord[0].accounts.sort()).toEqual(["acc1", "acc2"]);
-    expect(r.activeUnpaid.map((u) => u.user).sort()).toEqual(["acc1", "acc2"]);
+    expect(r.activeUnpaid.map((u) => u.user).sort()).toEqual(["acc1", "acc2"]); // trial1 not listed
   });
-  it("lists accounts expiring within the window sorted by days left", () => {
+  it("lists accounts expiring within the window, excluding trial accounts", () => {
     const soon = expiringSoon(users, NOW, 14);
-    expect(soon.map((u) => u.user)).toEqual(["acc1", "paidacc"]); // acc2 is >14d out
+    expect(soon.map((u) => u.user)).toEqual(["acc1", "paidacc"]); // acc2 >14d out, trial1 excluded
     expect(soon[0].daysLeft).toBeLessThanOrEqual(soon[1].daysLeft);
   });
 });

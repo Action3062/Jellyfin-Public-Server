@@ -680,7 +680,7 @@ function UsersTab({ api, apiJson, onQuickCredit }: { api: Api; apiJson: ApiJson;
 
   if (loading) return <Loading />;
   if (error) return <div className="status error">{error}</div>;
-  const users = (data!.users as Array<{ name: string; expiry: string | null; disabled: boolean; source: string | null; revenueEur: number; discordId: string | null }>)
+  const users = (data!.users as Array<{ name: string; expiry: string | null; disabled: boolean; source: string | null; revenueEur: number; discordId: string | null; trial?: boolean }>)
     .filter((u) => u.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
@@ -723,7 +723,7 @@ function UsersTab({ api, apiJson, onQuickCredit }: { api: Api; apiJson: ApiJson;
             <tbody>
               {users.map((u) => (
                 <tr key={u.name} className={u.disabled ? "row-disabled" : ""}>
-                  <td>{u.name}{u.disabled && <span className="badge bad" style={{ marginLeft: 6 }}>gesperrt</span>}</td>
+                  <td>{u.name}{u.trial && <span className="badge muted" style={{ marginLeft: 6 }}>Trial</span>}{u.disabled && <span className="badge bad" style={{ marginLeft: 6 }}>gesperrt</span>}</td>
                   <td>{fmtDay(u.expiry)}</td>
                   <td className="hint">{u.source ?? "—"}</td>
                   <td className="num">{u.revenueEur ? fmtEur(u.revenueEur) : "—"}</td>
