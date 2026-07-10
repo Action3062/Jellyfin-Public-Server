@@ -13,3 +13,4 @@ api/prisma/dev.db
 test-results
 playwright-report
 *.tsbuildinfo
+dump.rdb
