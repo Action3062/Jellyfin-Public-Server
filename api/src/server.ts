@@ -13,6 +13,8 @@ import { createAztecoClient } from "./services/azteco.js";
 import { checkJellyfinUser, getJellyfinUserInfo, isUsernameAvailable, UsernameTakenError } from "./services/jfago.js";
 import { createNowPaymentsInvoice, getNowPaymentsStatus, verifyNowPaymentsIpn } from "./services/nowpayments.js";
 import { fulfillPayment, registerNewAccount } from "./services/provisioning.js";
+import { registerAdminRoutes } from "./routes/adminRoutes.js";
+import { registerBotRoutes } from "./routes/botRoutes.js";
 
 const prisma = new PrismaClient();
 
@@ -254,6 +256,9 @@ app.post("/pay/api/register", { config: { rateLimit: { max: 10, timeWindow: "1 m
 });
 
 app.post("/pay/api/azteco/redeem", { config: { rateLimit: { max: 8, timeWindow: "10 minutes" } } }, async (request, reply) => {
+  if (!config.AZTECO_ENABLED && config.NODE_ENV === "production") {
+    return reply.code(403).send({ value_eur: 0, error: "azteco_disabled" });
+  }
   const body = z
     .object({
       code: z.string().regex(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/),
@@ -478,6 +483,9 @@ if (mockMode) {
     return { ok: true };
   });
 }
+
+registerAdminRoutes(app, { prisma, queue: provisioningQueue });
+registerBotRoutes(app, { prisma });
 
 app.setErrorHandler((error, _request, reply) => {
   app.log.error(error);

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
-import { apiBase } from "../../lib/site";
+import { apiBase, plexEnabled } from "../../lib/site";
 import { useLanguage } from "../LanguageProvider";
 import { defaultPlans, type Plan } from "../../lib/plans";
 
@@ -41,7 +41,7 @@ export function Plans() {
                   €{perMonth.toFixed(2)} {t("landing.plans.permonth")}
                 </span>
               </p>
-              {plan.months === 12 && (
+              {plexEnabled && plan.months === 12 && (
                 <p className="plan-perk">
                   <Check size={15} aria-hidden /> {t("landing.plans.plex")}
                 </p>

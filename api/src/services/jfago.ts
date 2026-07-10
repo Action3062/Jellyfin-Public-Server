@@ -1,4 +1,5 @@
 import { config, jfaGoConfigured } from "../config.js";
+import { jellyfinConfigured, jellyfinUserExists } from "./jellyfin.js";
 
 /**
  * jfa-go admin API client.
@@ -79,7 +80,98 @@ export async function findJellyfinUser(username: string): Promise<JfaUser | null
 }
 
 export async function checkJellyfinUser(username: string): Promise<boolean> {
+  if (jellyfinConfigured) return jellyfinUserExists(username).catch(() => false);
   return Boolean(await findJellyfinUser(username));
+}
+
+export type UserCheckResult = {
+  /** Whether a matching user exists. Only meaningful when `verified` is true. */
+  exists: boolean;
+  /** Whether the lookup was actually performed against a backend. */
+  verified: boolean;
+};
+
+/**
+ * Existence check with an explicit verification signal, used by admin actions
+ * that must not credit unverifiable usernames. Prefers the Jellyfin API,
+ * falls back to jfa-go; in pure mock mode (development only) 3+ character
+ * names count as verified so the panel remains testable.
+ */
+export async function checkJellyfinUserVerified(username: string): Promise<UserCheckResult> {
+  const name = username.trim();
+  if (!name) return { exists: false, verified: false };
+  try {
+    if (jellyfinConfigured) return { exists: await jellyfinUserExists(name), verified: true };
+    if (jfaGoConfigured) return { exists: Boolean(await findJellyfinUser(name)), verified: true };
+  } catch (error) {
+    console.error(`[user-check] lookup failed for "${name}": ${error instanceof Error ? error.message : String(error)}`);
+    return { exists: false, verified: false };
+  }
+  if (config.NODE_ENV !== "production") return { exists: name.length >= 3, verified: true };
+  return { exists: false, verified: false };
+}
+
+export type JfaUserDetailed = {
+  id: string;
+  name: string;
+  expiry: number; // Unix seconds (0 = no expiry)
+  disabled: boolean;
+  discordId?: string;
+  lastActive?: number; // Unix seconds
+  email?: string;
+  label?: string; // jfa-go account label; the Discord bot tags trials with "Trial"
+};
+
+function pick(obj: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+  }
+  return undefined;
+}
+
+/**
+ * Full user list for the admin panel. Parsed defensively because jfa-go's JSON
+ * tag casing for the user-list response differs between versions.
+ */
+export async function listJfaUsersDetailed(): Promise<JfaUserDetailed[]> {
+  if (!jfaGoConfigured) return [];
+  const data = (await jfaFetch("/users")) as Record<string, unknown> | null;
+  const rawList = (pick(data || {}, "users", "UserList", "user_list") ?? []) as Array<Record<string, unknown>>;
+  return rawList
+    .map((entry) => {
+      const discord = pick(entry, "discord_id", "discordID", "DiscordID");
+      const lastActive = Number(pick(entry, "last_active", "lastActive", "LastActive") ?? 0);
+      const email = pick(entry, "email", "Email");
+      const label = pick(entry, "label", "Label");
+      return {
+        id: String(pick(entry, "id", "ID") ?? ""),
+        name: String(pick(entry, "name", "Name") ?? ""),
+        expiry: Number(pick(entry, "expiry", "Expiry") ?? 0),
+        disabled: Boolean(pick(entry, "disabled", "Disabled") ?? false),
+        discordId: discord ? String(discord) : undefined,
+        lastActive: Number.isFinite(lastActive) && lastActive > 0 ? lastActive : undefined,
+        email: email ? String(email) : undefined,
+        label: label ? String(label) : undefined
+      };
+    })
+    .filter((entry) => entry.name);
+}
+
+/** Enable or disable a Jellyfin account via jfa-go, without touching its expiry. */
+export async function setJfaUserEnabled(username: string, enabled: boolean) {
+  if (!jfaGoConfigured) return { ok: true, mock: true };
+  const user = await findJellyfinUser(username);
+  if (!user) throw new Error(`jfa-go: user not found: ${username}`);
+  await jfaFetch("/users/enable", {
+    method: "POST",
+    body: JSON.stringify({
+      users: [user.id],
+      enabled,
+      notify: false,
+      reason: enabled ? "Re-enabled by admin" : "Disabled by admin"
+    })
+  });
+  return { ok: true, userId: user.id, enabled };
 }
 
 export type JellyfinUserInfo = {

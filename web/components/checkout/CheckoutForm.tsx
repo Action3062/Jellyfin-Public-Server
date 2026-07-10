@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Lock, UserPlus, UserRound } from "lucide-react";
-import { apiBase } from "../../lib/site";
+import { apiBase, aztecoEnabled, plexEnabled } from "../../lib/site";
 import { coins, defaultAztecoOptions, defaultPlans, type AztecoOption, type Plan } from "../../lib/plans";
 import { useLanguage } from "../LanguageProvider";
 
@@ -39,7 +39,7 @@ export function CheckoutForm() {
   const requestedPlan = useRef(searchParams.get("plan"));
 
   const plan = useMemo(() => plans.find((item) => item.id === selectedPlan) || plans[0], [plans, selectedPlan]);
-  const plexEligible = tab === "crypto" ? Boolean(plan?.includes_plex) : false;
+  const plexEligible = plexEnabled && tab === "crypto" ? Boolean(plan?.includes_plex) : false;
 
   useEffect(() => {
     Promise.all([
@@ -145,14 +145,18 @@ export function CheckoutForm() {
 
   return (
     <section className="card" data-testid="checkout">
-      <div className="tabs">
-        <button type="button" className={`tab ${tab === "crypto" ? "active" : ""}`} onClick={() => setTab("crypto")}>
-          {t("pay.tab.crypto")}
-        </button>
-        <button type="button" className={`tab ${tab === "azteco" ? "active" : ""}`} onClick={() => setTab("azteco")}>
-          {t("pay.tab.azteco")}
-        </button>
-      </div>
+      {aztecoEnabled ? (
+        <div className="tabs">
+          <button type="button" className={`tab ${tab === "crypto" ? "active" : ""}`} onClick={() => setTab("crypto")}>
+            {t("pay.tab.crypto")}
+          </button>
+          <button type="button" className={`tab ${tab === "azteco" ? "active" : ""}`} onClick={() => setTab("azteco")}>
+            {t("pay.tab.azteco")}
+          </button>
+        </div>
+      ) : (
+        <div className="section-title">{t("pay.tab.crypto")}</div>
+      )}
 
       {tab === "crypto" ? (
         <>

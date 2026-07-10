@@ -21,6 +21,7 @@ Privacy-focused Jellyfin/Plex subscription portal: marketing landing page, crypt
 | `/order/[orderId]` | Tokenized order page (`#t=<claim token>`): payment status, activation, Plex status. NOWPayments `success_url` points here. |
 | `/register/[orderId]` | Portal-hosted registration for paid new-account orders (username + password, fully in portal branding — jfa-go's UI is never shown) |
 | `/dashboard` | Claim-token dashboard: subscription status, expiry, payment history, renew CTA |
+| `/admin` | Operator panel (separate login + optional TOTP 2FA): revenue KPIs, manual time credits, payment/webhook/voucher drill-downs, user directory with drift/abuse reports, Discord-bot remote control, health checks, audit log |
 | `/pay/mock-invoice/[orderId]` | Dev-only stand-in for the hosted invoice (mock mode) |
 | `/impressum`, `/datenschutz` | Legal pages (fill in operator details before going live) |
 
@@ -64,6 +65,10 @@ The e2e config boots both dev servers and expects Postgres on `127.0.0.1:5433` a
 - `POST /pay/api/dev/simulate-payment` — mock mode only, never mounted in production
 
 Legacy field note: `discord_user` is still accepted as an alias for `jellyfin_username`.
+
+## Admin & Discord bot
+
+The `/admin` panel is enabled by setting `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `ADMIN_SESSION_SECRET`; sessions are HMAC-signed tokens (8h, refreshable up to 7 days) and TOTP 2FA can be enabled inside the panel. Every sensitive action lands in the `AdminAuditLog` table. The Discord bot integrates over HTTP (`/pay/api/bot/*`, `/pay/api/trial/status`): reads are public, writes require the shared `BOT_API_SECRET`; the panel can toggle trial handouts, override bot feature flags, set support status, and queue commands (e.g. trial resets) that the bot polls. Feature switches: `AZTECO_ENABLED` (checkout tab + API gate) and `PLEX_ENABLED` (UI visibility).
 
 ## Provider integration notes
 

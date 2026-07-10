@@ -1,4 +1,5 @@
 import type { Payment, PrismaClient } from "@prisma/client";
+import { nanoid } from "nanoid";
 import { addDays, addMonths, laterOf } from "../lib/expiry.js";
 import { createJellyfinUser, extendJellyfinExpiry, isUsernameAvailable, UsernameTakenError } from "./jfago.js";
 import { invitePlexUser } from "./plex.js";
@@ -11,7 +12,7 @@ import { invitePlexUser } from "./plex.js";
 
 async function activateSubscription(
   prisma: PrismaClient,
-  input: { username: string; plan: string; source: "nowpayments" | "azteco"; months?: number | null; days?: number | null }
+  input: { username: string; plan: string; source: "nowpayments" | "azteco" | "manual"; months?: number | null; days?: number | null }
 ) {
   const user = await prisma.user.upsert({
     where: { jellyfinUsername: input.username },
@@ -154,4 +155,86 @@ export async function registerNewAccount(
   });
   await fulfillPlex(prisma, updated);
   return prisma.payment.findUnique({ where: { orderId: payment.orderId } }) as Promise<Payment>;
+}
+
+/**
+ * Admin action: credit days manually (support goodwill, offline payments).
+ * Records a `manual` payment + subscription so revenue stats and the
+ * customer's dashboard history stay complete.
+ */
+export async function provisionManual(
+  prisma: PrismaClient,
+  username: string,
+  product: string,
+  days: number,
+  amountEur: number,
+  note: string
+) {
+  const user = await prisma.user.upsert({
+    where: { jellyfinUsername: username },
+    update: {},
+    create: { jellyfinUsername: username }
+  });
+  const latest = await prisma.subscription.findFirst({
+    where: { userId: user.id, status: "active" },
+    orderBy: { expiresAt: "desc" }
+  });
+  const startsAt = laterOf(new Date(), latest?.expiresAt || new Date());
+  const expiresAt = addDays(startsAt, days);
+  await extendJellyfinExpiry(username, expiresAt);
+  await prisma.subscription.create({
+    data: { userId: user.id, plan: note ? `manual: ${note}` : "manual", source: "manual", startsAt, expiresAt, status: "active" }
+  });
+  await prisma.payment.create({
+    data: {
+      provider: "manual",
+      orderId: `man_${nanoid(18)}`,
+      amountEur,
+      status: "finished",
+      provisionState: "provisioned",
+      provisionedAt: startsAt,
+      user: username,
+      userId: user.id,
+      product
+    }
+  });
+  return { startsAt, expiresAt };
+}
+
+/**
+ * Admin action: set an absolute expiry (correction / subtract time / undo).
+ * Supersedes all active subscription rows (case-insensitive across duplicate
+ * User rows) so future stacking credits resume from the corrected date.
+ */
+export async function setManualExpiry(prisma: PrismaClient, username: string, expiresAt: Date, note: string) {
+  const user = await prisma.user.upsert({
+    where: { jellyfinUsername: username },
+    update: {},
+    create: { jellyfinUsername: username }
+  });
+  const related = await prisma.user.findMany({
+    where: { jellyfinUsername: { equals: username, mode: "insensitive" } },
+    select: { id: true }
+  });
+  const userIds = Array.from(new Set([user.id, ...related.map((r) => r.id)]));
+  // jfa-go holds the authoritative expiry; set it first so a later DB failure
+  // still leaves the account showing the corrected date.
+  await extendJellyfinExpiry(username, expiresAt);
+  await prisma.$transaction([
+    prisma.subscription.updateMany({
+      where: { userId: { in: userIds }, status: "active" },
+      data: { status: "expired" }
+    }),
+    prisma.subscription.create({
+      data: {
+        userId: user.id,
+        plan: note ? `korrektur: ${note}` : "korrektur",
+        source: "manual",
+        startsAt: new Date(),
+        expiresAt,
+        status: "active"
+      }
+    })
+  ]);
+  return { expiresAt };
 }

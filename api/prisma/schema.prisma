@@ -10,6 +10,7 @@ datasource db {
 enum Provider {
   nowpayments
   azteco
+  manual
 }
 
 enum SubscriptionStatus {
@@ -128,4 +129,63 @@ model WebhookEvent {
   processedAt DateTime? @map("processed_at")
 
   @@unique([provider, eventId])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+}
+
+// Security/audit trail for the admin panel: every login (success + failure),
+// trial toggle, manual credit, and user enable/disable is recorded here.
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  actor     String   @default("")
+  ip        String   @default("")
+  detail    Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+}
+
+// Weekly funnel history pushed by the Discord bot (one row per guild per report
+// period) so the admin panel can chart trial->abo conversion over time.
+model FunnelSnapshot {
+  id           String   @id @default(cuid())
+  guildId      String   @map("guild_id")
+  trials       Int      @default(0)
+  upgrades     Int      @default(0)
+  expired      Int      @default(0)
+  reactivated  Int      @default(0)
+  activeAbos   Int      @default(0) @map("active_abos")
+  activeTrials Int      @default(0) @map("active_trials")
+  periodEnd    DateTime @map("period_end")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([guildId, periodEnd])
+}
+
+// Latest snapshot the bot pushes for a given kind ("trials", "tickets"). The
+// panel reads the most recent blob instead of talking to the bot directly.
+model BotReport {
+  kind      String   @id
+  payload   Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+}
+
+// Command queue the bot polls (e.g. reset a user's trial). The admin enqueues a
+// command; the bot marks it done/failed on its next poll.
+model BotCommand {
+  id          String    @id @default(cuid())
+  kind        String
+  target      String
+  status      String    @default("pending")
+  result      String?
+  createdBy   String    @default("") @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  processedAt DateTime? @map("processed_at")
+
+  @@index([status, createdAt])
 }

@@ -14,6 +14,11 @@ const schema = z
     AZTECO_RESELLER_API_BASE: z.string().default(""),
     AZTECO_RESELLER_API_KEY: z.string().default(""),
     AZTECO_CLIENT_MODE: z.enum(["mock", "real"]).default("mock"),
+    // Master switch: voucher redemption is rejected while disabled.
+    AZTECO_ENABLED: z
+      .string()
+      .default("false")
+      .transform((value) => value === "true"),
     // jfa-go issues 20-minute JWTs via GET /token/login (Basic auth); there is
     // no long-lived static API key, so the portal logs in with credentials.
     JFA_GO_BASE_URL: z.string().url().default("http://jfa-go:8056"),
@@ -27,7 +32,14 @@ const schema = z
     PLEX_TOKEN: z.string().default(""),
     PLEX_SERVER_NAME: z.string().default(""),
     DATABASE_URL: z.string().default("postgres://postgres:postgres@localhost:5432/payment_portal"),
-    REDIS_URL: z.string().default("redis://localhost:6379")
+    REDIS_URL: z.string().default("redis://localhost:6379"),
+    // Admin panel (all three required for /admin to accept logins).
+    ADMIN_USERNAME: z.string().default(""),
+    ADMIN_PASSWORD: z.string().default(""),
+    ADMIN_SESSION_SECRET: z.string().default(""),
+    // Shared secret the Discord bot sends (Bearer) on write endpoints
+    // (heartbeat/report/command-ack). Empty = bot write endpoints disabled.
+    BOT_API_SECRET: z.string().default("")
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "production" && env.NOWPAYMENTS_API_KEY && !env.NOWPAYMENTS_IPN_SECRET) {
@@ -39,5 +51,10 @@ const schema = z
     }
   });
 
-export const config = schema.parse(process.env);
+// Accept JFA_GO_USER as an alias for JFA_GO_USERNAME so existing production
+// .env files (which predate the rename) keep working unchanged.
+export const config = schema.parse({
+  ...process.env,
+  JFA_GO_USERNAME: process.env.JFA_GO_USERNAME || process.env.JFA_GO_USER || ""
+});
 export const jfaGoConfigured = Boolean(config.JFA_GO_USERNAME && config.JFA_GO_PASSWORD);
