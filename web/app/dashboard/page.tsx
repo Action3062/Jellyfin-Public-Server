@@ -7,6 +7,7 @@ import { SiteFooter } from "../../components/SiteFooter";
 import { SiteHeader } from "../../components/SiteHeader";
 import { useLanguage } from "../../components/LanguageProvider";
 import { apiBase } from "../../lib/site";
+import { defaultPlans } from "../../lib/plans";
 
 type DashboardData =
   | {
@@ -136,7 +137,13 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <span className="hint">{t("dash.plan")}</span>
-                  <strong>{data.plan || "—"}</strong>
+                  <strong>
+                    {(() => {
+                      const planRecord = defaultPlans.find((item) => item.id === data.plan_id);
+                      if (!planRecord) return data.plan || "—";
+                      return (lang === "de" ? planRecord.label_de : planRecord.label_en) || planRecord.label;
+                    })()}
+                  </strong>
                 </div>
                 <div>
                   <span className="hint">{t("dash.source")}</span>
