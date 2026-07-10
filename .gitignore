@@ -10,3 +10,6 @@ api/dist
 coverage
 *.log
 api/prisma/dev.db
+test-results
+playwright-report
+*.tsbuildinfo

@@ -1,7 +1,11 @@
 import { config } from "../config.js";
 
-export async function invitePlexUser(plexUsername: string, product: string) {
-  if (product !== "hd") return { success: false, error: "product not eligible" };
+/**
+ * Invite a Plex user to the shared server. Eligibility is decided by the
+ * fulfillment engine from the paid plan (Payment.plexState), never by the
+ * caller, so this function only performs the share.
+ */
+export async function invitePlexUser(plexUsername: string): Promise<{ success: boolean; error?: string }> {
   if (!config.PLEX_TOKEN) return { success: true };
 
   // TODO: Wire against the selected Plex API flow for the target server/library setup.

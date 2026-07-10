@@ -5,16 +5,19 @@ services:
       dockerfile: infra/web.Dockerfile
       args:
         API_URL: http://api:4000
-        NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-<<< SHOP_NAME >>>}
-        NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-<<< DISCORD_INVITE_URL >>>}
+        NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-Byteflix}
+        NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-}
     environment:
       API_URL: http://api:4000
-      NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-<<< SHOP_NAME >>>}
-      NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-<<< DISCORD_INVITE_URL >>>}
+      NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-Byteflix}
+      NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-}
     ports:
       - "3000:3000"
+    restart: unless-stopped
     depends_on:
       - api
+    networks:
+      - edge
 
   api:
     build:
@@ -23,39 +26,59 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/payment_portal
+      DATABASE_URL: postgres://portal:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}@postgres:5432/payment_portal
       REDIS_URL: redis://redis:6379
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:-http://localhost:4000}
     ports:
       - "4000:4000"
+    restart: unless-stopped
     depends_on:
       - postgres
       - redis
       - jfa-go
+    networks:
+      - edge
+      - backend
 
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: portal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}
       POSTGRES_DB: payment_portal
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    restart: unless-stopped
+    # No host port mapping: only reachable from the backend network.
+    networks:
+      - backend
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    # No host port mapping: only reachable from the backend network.
+    networks:
+      - backend
 
   jfa-go:
     image: hrfee/jfa-go:latest
-    ports:
-      - "8056:8056"
     volumes:
       - jfa_go_data:/data
+    restart: unless-stopped
+    # Backend-only: customers register on the portal's own /register page,
+    # so jfa-go needs no public exposure. The localhost binding exists purely
+    # for the OPERATOR's admin UI (initial setup, profiles, account overview).
+    ports:
+      - "127.0.0.1:8056:8056"
+    networks:
+      - edge
+      - backend
+
+networks:
+  edge:
+  backend:
+    internal: true
 
 volumes:
   postgres_data:

@@ -12,9 +12,12 @@
     "dev:api": "npm --workspace api run dev",
     "build": "npm --workspace api run build && npm --workspace web run build",
     "test": "npm --workspace api test",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "fetch-assets": "node web/scripts/fetch-assets.mjs",
     "lint": "npm --workspace web run lint && npm --workspace api run lint"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.5.4"
   }
