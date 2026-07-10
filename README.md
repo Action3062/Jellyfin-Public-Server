@@ -26,6 +26,10 @@ Privacy-focused Jellyfin/Plex subscription portal: marketing landing page, crypt
 
 **Access model (no accounts, no e-mail):** every order returns a one-time `claim_token`; only its SHA-256 hash is stored. The token travels in the URL fragment (never in server logs) and is the key to the order page, registration, and the dashboard. New customers register on the portal's own `/register` page; the account is created through jfa-go's admin API (`POST /user` + `POST /users/extend`) with the purchased duration as expiry. The chosen password is forwarded to the media server and never persisted by the portal.
 
+## Deployment
+
+On a server with Docker (compose v2): `./deploy.sh` — creates `infra/.env` from the example on first run, then builds the images, starts the stack, applies migrations, and runs health checks. Follow the printed one-time steps afterwards (jfa-go setup, reverse proxy, env values).
+
 ## Local setup
 
 1. Copy `infra/.env.example` to `infra/.env` and fill provider secrets (`POSTGRES_PASSWORD` is mandatory for compose).
