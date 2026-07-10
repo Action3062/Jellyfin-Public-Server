@@ -19,13 +19,33 @@ enum SubscriptionStatus {
   expired
 }
 
+enum AccountMode {
+  existing
+  new
+}
+
+enum ProvisionState {
+  pending
+  awaiting_registration
+  provisioned
+  failed
+}
+
+enum PlexState {
+  none
+  pending
+  invited
+  failed
+}
+
 model User {
-  id                String         @id @default(cuid())
-  jellyfinUsername  String         @unique
-  jellyfinUserId    String?
-  plexUsername      String?
-  createdAt         DateTime       @default(now())
-  subscriptions     Subscription[]
+  id               String         @id @default(cuid())
+  jellyfinUsername String         @unique
+  jellyfinUserId   String?
+  plexUsername     String?
+  createdAt        DateTime       @default(now())
+  subscriptions    Subscription[]
+  payments         Payment[]
 }
 
 model Plan {
@@ -49,17 +69,34 @@ model AztecoOption {
 }
 
 model Payment {
-  id          String   @id @default(cuid())
-  provider    Provider
-  providerRef String?  @map("provider_ref")
-  orderId     String   @unique @map("order_id")
-  coin        String?
-  amountEur   Decimal  @map("amount_eur") @db.Decimal(10, 2)
-  status      String
-  user        String
-  product     String
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id             String         @id @default(cuid())
+  provider       Provider
+  providerRef    String?        @map("provider_ref")
+  npPaymentId    String?        @map("np_payment_id")
+  orderId        String         @unique @map("order_id")
+  coin           String?
+  amountEur      Decimal        @map("amount_eur") @db.Decimal(10, 2)
+  status         String
+  planId         String?        @map("plan_id")
+  months         Int?
+  days           Int?
+  accountMode    AccountMode    @default(existing) @map("account_mode")
+  user           String?
+  userId         String?        @map("user_id")
+  userRef        User?          @relation(fields: [userId], references: [id])
+  plexUsername   String?        @map("plex_username")
+  plexState      PlexState      @default(none) @map("plex_state")
+  claimTokenHash String?        @map("claim_token_hash")
+  invoiceUrl     String?        @map("invoice_url")
+  inviteCode     String?        @map("invite_code")
+  inviteUrl      String?        @map("invite_url")
+  provisionState ProvisionState @default(pending) @map("provision_state")
+  provisionedAt  DateTime?      @map("provisioned_at")
+  product        String
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@index([claimTokenHash])
 }
 
 model VoucherRedemption {
@@ -68,7 +105,7 @@ model VoucherRedemption {
   status    String
   valueEur  Decimal  @default(0) @map("value_eur") @db.Decimal(10, 2)
   txRef     String?  @map("tx_ref")
-  user      String
+  user      String?
   product   String
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

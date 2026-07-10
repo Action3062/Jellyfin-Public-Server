@@ -1,51 +1,69 @@
 # Payment Portal
 
-Privacy-focused Jellyfin/Plex subscription payment portal with a Next.js frontend and a Node.js companion backend.
+Privacy-focused Jellyfin/Plex subscription portal: marketing landing page, crypto/voucher checkout, tokenized order tracking, and a claim-token dashboard — Next.js frontend with a Fastify companion backend.
 
 ## Stack
 
-- Frontend: Next.js App Router, TypeScript, Tailwind-compatible design tokens, Inter via `next/font`
+- Frontend: Next.js App Router, TypeScript, component-based UI (`web/components`), dictionary-based DE/EN i18n, Inter via `next/font`
 - Backend: Fastify, TypeScript, Prisma/PostgreSQL, BullMQ/Redis
-- Payments: NowPayments invoices/IPN, Azteco adapter with mock and real-client TODO boundary
-- Provisioning: jfa-go/Jellyfin expiry adapter, Plex invite adapter
-- Deployment: Docker Compose for web, api, postgres, redis, jfa-go
+- Payments: NOWPayments invoices/IPN, Azteco adapter with mock and real-client TODO boundary
+- Provisioning: jfa-go (expiry extension for existing users, single-use registration invites for new users), Plex invite for eligible plans
+- Artwork: Higgsfield Cinema Studio imagery, fetched at build time (`web/scripts/fetch-assets.mjs`) with pure-CSS gradient fallbacks
+- Testing: Vitest (API), Playwright e2e (desktop + mobile, DE/EN, full checkout flows in provider mock mode)
+- Deployment: Docker Compose with an internal backend network (postgres/redis unreachable from the host), non-root containers
 
-Prisma is used because the payment/control-plane schema benefits from explicit migrations, generated types, and readable relational modeling.
+## Information architecture
 
-## Layout
+| Route | Purpose |
+| --- | --- |
+| `/` | Marketing landing (hero, features, pricing, FAQ, DE/EN) |
+| `/pay` | Checkout: plan/coin or Azteco voucher + explicit "existing account / new here" step |
+| `/order/[orderId]` | Tokenized order page (`#t=<claim token>`): payment status, activation, invite link for new users, Plex status. NOWPayments `success_url` points here. |
+| `/dashboard` | Claim-token dashboard: subscription status, expiry, payment history, renew CTA |
+| `/pay/mock-invoice/[orderId]` | Dev-only stand-in for the hosted invoice (mock mode) |
+| `/impressum`, `/datenschutz` | Legal pages (fill in operator details before going live) |
 
-- `web`: payment UI at `/pay`
-- `api`: backend endpoints under `/pay/api`, webhook under `/api/webhooks/nowpayments`
-- `infra`: Dockerfiles, Compose, `.env.example`
-- `docs`: provider verification notes
+**Access model (no accounts, no e-mail):** every order returns a one-time `claim_token`; only its SHA-256 hash is stored. The token travels in the URL fragment (never in server logs) and is the key to both the order page and the dashboard. New customers register themselves through a single-use jfa-go invite issued server-side after payment confirmation — passwords never touch this codebase.
 
-## Local Setup
+## Local setup
 
-1. Copy `infra/.env.example` to `infra/.env` and fill provider secrets.
-2. Install dependencies with `npm install`.
-3. Generate Prisma client with `npm --workspace api run prisma:generate`.
-4. Start Postgres/Redis using `docker compose -f infra/docker-compose.yml up postgres redis jfa-go`.
-5. Run migrations/seeds, then start dev services:
+1. Copy `infra/.env.example` to `infra/.env` and fill provider secrets (`POSTGRES_PASSWORD` is mandatory for compose).
+2. `npm install`
+3. `npm --workspace api run prisma:generate`
+4. Start Postgres/Redis (e.g. `docker compose -f infra/docker-compose.yml up postgres redis`).
+5. `npm --workspace api run prisma:migrate && npm run dev`
+
+With no provider keys configured everything runs in mock mode: invoices resolve to `/pay/mock-invoice/...` with a "simulate payment" button, jfa-go lookups treat 3+ character usernames as existing, and invites use mock URLs.
+
+## Testing
 
 ```bash
-npm --workspace api run prisma:migrate
-npm run dev
+npm test                 # API unit tests (Vitest)
+npm run test:e2e         # Playwright: desktop + mobile projects, DE/EN, all checkout flows
 ```
 
-## API Contract
+The e2e config boots both dev servers and expects Postgres on `127.0.0.1:5433` and Redis on `127.0.0.1:6379` (override with `E2E_DATABASE_URL` / `E2E_REDIS_URL`; set `PW_SYSTEM_CHROMIUM=1` to use a preinstalled Chromium).
 
-- `GET /pay/api/products`
-- `GET /pay/api/azteco/options`
-- `POST /pay/api/user/check`
-- `POST /pay/api/nowpayments/create`
-- `GET /pay/api/nowpayments/status/:invoice_id`
-- `POST /pay/api/azteco/redeem`
-- `POST /pay/api/plex/invite`
+## API contract
 
-Legacy field note: `discord_user` carries the Jellyfin username by design.
+- `GET  /pay/api/products` — plans incl. `label_de`/`label_en`, `includes_plex`
+- `GET  /pay/api/azteco/options`
+- `POST /pay/api/user/check` — `{username}` → `{exists}` (tightly rate-limited)
+- `POST /pay/api/nowpayments/create` — `{plan_id, coin, account_mode: "existing"|"new", jellyfin_username?, plex_username?}` → `{order_id, claim_token, invoice_id, invoice_url, ...}`
+- `POST /pay/api/azteco/redeem` — `{code, account_mode, jellyfin_username?, plex_username?}` → `{value_eur, order_id, claim_token, invite_url?}` (new accounts: one voucher per order)
+- `GET  /pay/api/order/:orderId` — header `x-claim-token`; returns payment phase, provisioning state, invite/plex status; performs lazy NOWPayments reconciliation and invite-usage backfill
+- `POST /pay/api/dashboard` — `{token}` → subscription status, expiry, payment history
+- `POST /api/webhooks/nowpayments` — HMAC-SHA512-verified IPN (event identity = `payment_id:status`, one IPN per status change)
+- `POST /pay/api/dev/simulate-payment` — mock mode only, never mounted in production
 
-## Sandbox Notes
+Legacy field note: `discord_user` is still accepted as an alias for `jellyfin_username`.
 
-- Leave `NOWPAYMENTS_API_KEY` empty for mock invoice URLs, or set `NOWPAYMENTS_BASE_URL=https://api-sandbox.nowpayments.io/v1` with a sandbox key.
-- Keep `AZTECO_CLIENT_MODE=mock` until the reseller API spec is available.
-- jfa-go user checks return local mock-positive results when no `JFA_GO_TOKEN` is configured.
+## Provider integration notes
+
+- **jfa-go** has no long-lived API keys: `GET /token/login` (Basic auth) returns a 20-minute JWT whose signing secret rotates on restart — configure `JFA_GO_USERNAME`/`JFA_GO_PASSWORD`. Expiry is set via `POST /users/extend` (Jellyfin user IDs + Unix-seconds timestamp, success = HTTP 204). Invites are created via `POST /invites` (label = order id) and the code recovered from `GET /invites`. See `docs/research-notes.md` for the source-verified contract.
+- **NOWPayments**: only `finished` means paid ("confirmed" ≠ funds received). Sandbox: `NOWPAYMENTS_BASE_URL=https://api-sandbox.nowpayments.io/v1` with a separate sandbox account.
+- **Azteco**: keep `AZTECO_CLIENT_MODE=mock` until the reseller API spec is available.
+
+## Artwork
+
+`npm run fetch-assets` downloads the Higgsfield-generated cinematic imagery into `web/public/assets` (WebP via sharp when available). The Docker web build runs it automatically; when the CDN is unreachable the UI keeps its gradient fallbacks.

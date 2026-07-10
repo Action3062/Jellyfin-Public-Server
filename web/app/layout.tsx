@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { LanguageProvider } from "../components/LanguageProvider";
+import { shopName } from "../lib/site";
 import "./globals.css";
 
 const inter = Inter({
@@ -9,14 +11,26 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Payment Portal",
-  description: "Crypto and Azteco payment portal for Jellyfin subscriptions"
+  title: {
+    default: `${shopName} — Private Streaming`,
+    template: `%s · ${shopName}`
+  },
+  description:
+    "Privater Jellyfin & Plex Streaming-Server. Anonym bezahlen mit Krypto oder Azteco. / Private Jellyfin & Plex streaming server. Pay anonymously with crypto or Azteco."
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0a0f",
+  width: "device-width",
+  initialScale: 1
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de" suppressHydrationWarning>
-      <body className={inter.variable}>{children}</body>
+      <body className={inter.variable}>
+        <LanguageProvider>{children}</LanguageProvider>
+      </body>
     </html>
   );
 }
