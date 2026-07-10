@@ -10,7 +10,7 @@ import { config } from "./config.js";
 import { aztecoOptions, defaultPlans, findPlan, supportedCoins } from "./data/defaults.js";
 import { sha256, timingSafeEqual } from "./lib/hash.js";
 import { createAztecoClient } from "./services/azteco.js";
-import { checkJellyfinUser, isUsernameAvailable, UsernameTakenError } from "./services/jfago.js";
+import { checkJellyfinUser, getJellyfinUserInfo, isUsernameAvailable, UsernameTakenError } from "./services/jfago.js";
 import { createNowPaymentsInvoice, getNowPaymentsStatus, verifyNowPaymentsIpn } from "./services/nowpayments.js";
 import { fulfillPayment, registerNewAccount } from "./services/provisioning.js";
 
@@ -367,7 +367,13 @@ app.post("/pay/api/dashboard", { config: { rateLimit: { max: 10, timeWindow: "1 
   });
   const latest = subscriptions[0] || null;
   const now = new Date();
-  const active = Boolean(latest && latest.expiresAt > now);
+
+  // Live member data from jfa-go (same source as its "My Account" page).
+  // The media server's expiry is authoritative — e.g. after manual admin
+  // changes — and falls back to the portal's subscription records.
+  const live = await getJellyfinUserInfo(user.jellyfinUsername).catch(() => null);
+  const expiresAt = live?.expiresAt || latest?.expiresAt || null;
+  const active = live?.disabled ? false : Boolean(expiresAt && expiresAt > now);
   const history = await prisma.payment.findMany({
     where: { OR: [{ userId: user.id }, { user: user.jellyfinUsername }] },
     orderBy: { createdAt: "desc" },
@@ -381,8 +387,11 @@ app.post("/pay/api/dashboard", { config: { rateLimit: { max: 10, timeWindow: "1 
     registered: true,
     username_masked: masked,
     active,
-    expires_at: latest?.expiresAt.toISOString() || null,
-    days_left: latest ? Math.max(0, Math.ceil((latest.expiresAt.getTime() - now.getTime()) / 86400000)) : 0,
+    expires_at: expiresAt?.toISOString() || null,
+    expiry_source: live?.expiresAt ? "server" : "portal",
+    days_left: expiresAt ? Math.max(0, Math.ceil((expiresAt.getTime() - now.getTime()) / 86400000)) : 0,
+    last_active: live?.lastActive?.toISOString() || null,
+    account_disabled: Boolean(live?.disabled),
     plan: latest ? findPlan(latest.plan)?.label_en || latest.plan : null,
     plan_id: latest?.plan || null,
     source: latest?.source || null,

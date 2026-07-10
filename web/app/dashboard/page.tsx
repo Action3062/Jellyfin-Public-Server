@@ -15,7 +15,10 @@ type DashboardData =
       username_masked: string;
       active: boolean;
       expires_at: string | null;
+      expiry_source: "server" | "portal";
       days_left: number;
+      last_active: string | null;
+      account_disabled: boolean;
       plan: string | null;
       plan_id: string | null;
       source: string | null;
@@ -68,6 +71,10 @@ export default function DashboardPage() {
   }, [check]);
 
   const dateFormat = new Intl.DateTimeFormat(lang === "de" ? "de-DE" : "en-GB", { dateStyle: "medium" });
+  const dateTimeFormat = new Intl.DateTimeFormat(lang === "de" ? "de-DE" : "en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 
   return (
     <div className="subpage">
@@ -122,9 +129,17 @@ export default function DashboardPage() {
                   {t("dash.user.label")}: {data.username_masked}
                 </span>
               </div>
+              {data.account_disabled && (
+                <div className="status error" role="status">
+                  {t("dash.disabled")}
+                </div>
+              )}
               <div className="status-grid">
                 <div>
-                  <span className="hint">{t("dash.expires")}</span>
+                  <span className="hint">
+                    {t("dash.expires")}
+                    {data.expiry_source === "server" && <> · {t("dash.live")}</>}
+                  </span>
                   <strong data-testid="expires-at">
                     {data.expires_at ? dateFormat.format(new Date(data.expires_at)) : "—"}
                   </strong>
@@ -149,6 +164,12 @@ export default function DashboardPage() {
                   <span className="hint">{t("dash.source")}</span>
                   <strong>{data.source === "nowpayments" ? "Crypto" : data.source === "azteco" ? "Azteco" : "—"}</strong>
                 </div>
+                {data.last_active && (
+                  <div>
+                    <span className="hint">{t("dash.lastactive")}</span>
+                    <strong>{dateTimeFormat.format(new Date(data.last_active))}</strong>
+                  </div>
+                )}
               </div>
               <Link className="btn-primary" href="/pay">
                 {t("dash.renew")}

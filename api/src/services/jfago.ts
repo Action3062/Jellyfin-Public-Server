@@ -20,7 +20,7 @@ import { config, jfaGoConfigured } from "../config.js";
  * development, CI, and e2e tests run without a jfa-go instance.
  */
 
-type JfaUser = { id: string; name: string; expiry?: number };
+type JfaUser = { id: string; name: string; expiry?: number; last_active?: number; disabled?: boolean };
 
 const TOKEN_TTL_MS = 15 * 60 * 1000; // refresh well before the 20-minute expiry
 
@@ -80,6 +80,34 @@ export async function findJellyfinUser(username: string): Promise<JfaUser | null
 
 export async function checkJellyfinUser(username: string): Promise<boolean> {
   return Boolean(await findJellyfinUser(username));
+}
+
+export type JellyfinUserInfo = {
+  exists: boolean;
+  expiresAt: Date | null;
+  lastActive: Date | null;
+  disabled: boolean;
+};
+
+/**
+ * Live member info from jfa-go (the same data its "My Account" page shows):
+ * authoritative expiry, last activity, and whether the account is disabled.
+ * `expiry`/`last_active` are Unix seconds; 0 means "not set".
+ */
+export async function getJellyfinUserInfo(username: string): Promise<JellyfinUserInfo | null> {
+  if (!jfaGoConfigured) {
+    // Mock mode: plausible activity so local dev and e2e render the field;
+    // expiry stays null so the portal's own subscription data is used.
+    return { exists: true, expiresAt: null, lastActive: new Date(Date.now() - 3 * 3600 * 1000), disabled: false };
+  }
+  const user = await findJellyfinUser(username);
+  if (!user) return { exists: false, expiresAt: null, lastActive: null, disabled: false };
+  return {
+    exists: true,
+    expiresAt: user.expiry ? new Date(user.expiry * 1000) : null,
+    lastActive: user.last_active ? new Date(user.last_active * 1000) : null,
+    disabled: Boolean(user.disabled)
+  };
 }
 
 /** Set an absolute expiry for an existing Jellyfin user. */
