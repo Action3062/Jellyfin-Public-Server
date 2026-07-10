@@ -5,6 +5,12 @@ name: Fetch Higgsfield artwork
 # commits the WebP files to the branch it was dispatched on.
 on:
   workflow_dispatch: {}
+  push:
+    branches:
+      - claude/ecc-workflow-setup-g25lw1
+    paths:
+      - ".github/workflows/fetch-assets.yml"
+      - "web/scripts/fetch-assets.mjs"
 
 permissions:
   contents: write
