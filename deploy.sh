@@ -49,6 +49,9 @@ if [ "${1:-}" != "--no-pull" ]; then
   git pull --ff-only
 fi
 
+echo "==> Stelle geteiltes Bot-Netzwerk sicher (portal-net)"
+docker network create portal-net >/dev/null 2>&1 || true
+
 echo "==> Baue Images"
 compose build
 

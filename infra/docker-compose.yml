@@ -46,12 +46,14 @@ services:
     depends_on:
       - postgres
       - redis
-    # `default` keeps the legacy infra_default network alive so external
-    # containers (Discord bot) that joined it keep reaching http://api:4000.
+    # `default` keeps the legacy infra_default network alive; `portal-net` is
+    # the shared network external containers (Discord bot) use to reach the
+    # api (deploy.sh creates it if missing).
     networks:
       - default
       - edge
       - backend
+      - portal-net
 
   postgres:
     image: postgres:16-alpine
@@ -93,6 +95,12 @@ networks:
   edge:
   backend:
     internal: true
+  # Shared with external containers (Discord bot). Created by deploy.sh /
+  # `docker network create portal-net` — external so compose never fights
+  # over its ownership labels.
+  portal-net:
+    external: true
+    name: portal-net
 
 volumes:
   postgres_data:
