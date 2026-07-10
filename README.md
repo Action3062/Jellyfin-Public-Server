@@ -20,7 +20,7 @@ Privacy-focused Jellyfin/Plex subscription portal: marketing landing page, crypt
 | `/pay` | Checkout: plan/coin or Azteco voucher + explicit "existing account / new here" step |
 | `/order/[orderId]` | Tokenized order page (`#t=<claim token>`): payment status, activation, Plex status. NOWPayments `success_url` points here. |
 | `/register/[orderId]` | Portal-hosted registration for paid new-account orders (username + password, fully in portal branding — jfa-go's UI is never shown) |
-| `/dashboard` | Claim-token dashboard: subscription status, expiry, payment history, renew CTA |
+| `/dashboard` | Member area: log in with Jellyfin credentials (verified against the media server) or an order's access key — live expiry/last-active from jfa-go, payment history, password change, renew CTA |
 | `/admin` | Operator panel (separate login + optional TOTP 2FA): revenue KPIs, manual time credits, payment/webhook/voucher drill-downs, user directory with drift/abuse reports, Discord-bot remote control, health checks, audit log |
 | `/pay/mock-invoice/[orderId]` | Dev-only stand-in for the hosted invoice (mock mode) |
 | `/impressum`, `/datenschutz` | Legal pages (fill in operator details before going live) |
@@ -60,7 +60,9 @@ The e2e config boots both dev servers and expects Postgres on `127.0.0.1:5433` a
 - `GET  /pay/api/order/:orderId` — header `x-claim-token`; returns payment phase, provisioning state, plex status; performs lazy NOWPayments reconciliation
 - `POST /pay/api/register/check` — `{username}` → `{available}`
 - `POST /pay/api/register` — `{order_id, claim_token, username, password}` → creates the Jellyfin account with the purchased duration (409 on taken username / unpaid / already registered)
-- `POST /pay/api/dashboard` — `{token}` → subscription status, expiry, payment history
+- `POST /pay/api/session/login` — `{username, password}` verified via Jellyfin `AuthenticateByName` → signed member session (7 days)
+- `POST /pay/api/session/password` — `{session, current_password, new_password}` → Jellyfin password change (`/Users/{id}/Password`)
+- `POST /pay/api/dashboard` — `{session}` (member login) or `{token}` (order access key) → subscription status, live expiry, payment history
 - `POST /api/webhooks/nowpayments` — HMAC-SHA512-verified IPN (event identity = `payment_id:status`, one IPN per status change)
 - `POST /pay/api/dev/simulate-payment` — mock mode only, never mounted in production
 

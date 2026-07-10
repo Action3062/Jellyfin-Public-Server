@@ -39,7 +39,11 @@ const schema = z
     ADMIN_SESSION_SECRET: z.string().default(""),
     // Shared secret the Discord bot sends (Bearer) on write endpoints
     // (heartbeat/report/command-ack). Empty = bot write endpoints disabled.
-    BOT_API_SECRET: z.string().default("")
+    BOT_API_SECRET: z.string().default(""),
+    // Signs customer dashboard sessions (Jellyfin-credential login). Falls
+    // back to a value derived from ADMIN_SESSION_SECRET, or an ephemeral
+    // boot-time secret in development.
+    MEMBER_SESSION_SECRET: z.string().default("")
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === "production" && env.NOWPAYMENTS_API_KEY && !env.NOWPAYMENTS_IPN_SECRET) {
@@ -58,3 +62,12 @@ export const config = schema.parse({
   JFA_GO_USERNAME: process.env.JFA_GO_USERNAME || process.env.JFA_GO_USER || ""
 });
 export const jfaGoConfigured = Boolean(config.JFA_GO_USERNAME && config.JFA_GO_PASSWORD);
+
+import crypto from "node:crypto";
+// Member sessions must never verify against the admin secret (and vice
+// versa), so derive a distinct one when no dedicated secret is set.
+export const memberSessionSecret =
+  config.MEMBER_SESSION_SECRET ||
+  (config.ADMIN_SESSION_SECRET
+    ? crypto.createHash("sha256").update(`${config.ADMIN_SESSION_SECRET}:member`).digest("hex")
+    : crypto.randomBytes(32).toString("hex"));

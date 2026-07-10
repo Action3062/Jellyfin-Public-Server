@@ -195,8 +195,49 @@ test.describe("azteco checkout", () => {
 test.describe("dashboard", () => {
   test("rejects an unknown access key", async ({ page }) => {
     await page.goto("/dashboard");
+    await page.getByRole("radio", { name: /Mit Zugangsschlüssel/ }).click();
     await page.getByLabel(/Zugangsschlüssel/).fill("definitely-not-a-real-token-123");
     await page.getByRole("button", { name: /Status prüfen/ }).click();
     await expect(page.locator(".status.error")).toContainText("Kein Zugang");
+  });
+
+  test("member logs in with Jellyfin credentials and changes the password", async ({ page, context }) => {
+    // Register a fresh member first (mock jfa-go/Jellyfin accept the account).
+    await page.goto("/pay?plan=hd_1m");
+    await page.getByRole("radio", { name: /Ich bin neu hier/ }).click();
+    const popupPromise = maybePopup(context);
+    await page.getByRole("button", { name: /Mit Crypto bezahlen/ }).click();
+    await expect(page).toHaveURL(/\/order\/np_/);
+    await (await popupPromise)?.close();
+    const orderId = orderIdFromUrl(page);
+    await simulatePayment(page, orderId);
+    await page.reload();
+    await page.getByTestId("register-link").click();
+    const username = uniqueUser("login");
+    await page.getByLabel(/Wunsch-Benutzername/).fill(username);
+    await page.getByLabel("Passwort", { exact: true }).fill("mein-passwort-1");
+    await page.getByLabel(/Passwort wiederholen/).fill("mein-passwort-1");
+    await page.getByTestId("register-submit").click();
+    await expect(page.getByTestId("register-success")).toBeVisible();
+
+    // Log in on the dashboard with the Jellyfin credentials.
+    await page.goto("/dashboard");
+    await page.getByLabel(/Jellyfin-Benutzername/).fill(username);
+    await page.getByLabel("Passwort", { exact: true }).fill("mein-passwort-1");
+    await page.getByTestId("login-submit").click();
+
+    await expect(page.getByTestId("dashboard-status")).toContainText("Aktiv");
+    await expect(page.getByTestId("dashboard-status")).toContainText(username);
+
+    // Change the password from the dashboard.
+    await page.getByLabel(/Aktuelles Passwort/).fill("mein-passwort-1");
+    await page.getByLabel("Neues Passwort", { exact: true }).fill("neues-passwort-2");
+    await page.getByLabel(/Neues Passwort wiederholen/).fill("neues-passwort-2");
+    await page.getByTestId("password-submit").click();
+    await expect(page.locator(".status.success")).toContainText("Passwort geändert");
+
+    // Logout returns to the login form.
+    await page.getByTestId("logout").click();
+    await expect(page.getByTestId("login-submit")).toBeVisible();
   });
 });

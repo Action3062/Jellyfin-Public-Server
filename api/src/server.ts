@@ -6,7 +6,9 @@ import { Prisma, PrismaClient, type Payment } from "@prisma/client";
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { config } from "./config.js";
+import { config, memberSessionSecret } from "./config.js";
+import { signAdminToken, verifyAdminToken } from "./lib/adminToken.js";
+import { authenticateJellyfinUser, changeJellyfinPassword, jellyfinLoginAvailable } from "./services/jellyfin.js";
 import { aztecoOptions, defaultPlans, findPlan, supportedCoins } from "./data/defaults.js";
 import { sha256, timingSafeEqual } from "./lib/hash.js";
 import { createAztecoClient } from "./services/azteco.js";
@@ -347,50 +349,75 @@ app.post("/pay/api/azteco/redeem", { config: { rateLimit: { max: 8, timeWindow: 
   return { value_eur: result.value_eur, order_id: orderId, claim_token: claimToken };
 });
 
-app.post("/pay/api/dashboard", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
-  const body = z.object({ token: z.string().min(16).max(128) }).parse(request.body);
-  const tokenHash = sha256(body.token);
-  const payment = await prisma.payment.findFirst({ where: { claimTokenHash: tokenHash } });
-  if (!payment) return reply.code(404).send({ error: "not found" });
+const MEMBER_SESSION_TTL = 7 * 24 * 60 * 60;
 
-  const user = payment.userId
-    ? await prisma.user.findUnique({ where: { id: payment.userId } })
-    : payment.user
-      ? await prisma.user.findUnique({ where: { jellyfinUsername: payment.user } })
-      : null;
+// Member login with the customer's own Jellyfin credentials (the account
+// jfa-go created at registration). Verified against the media server; the
+// portal only issues a signed session token and never stores the password.
+app.post("/pay/api/session/login", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
+  if (!jellyfinLoginAvailable) return reply.code(503).send({ error: "login_unavailable" });
+  const body = z
+    .object({ username: z.string().min(1).max(80), password: z.string().min(1).max(128) })
+    .parse(request.body);
+  const auth = await authenticateJellyfinUser(body.username, body.password);
+  if (!auth.ok) return reply.code(401).send({ error: "invalid_credentials" });
+  const username = auth.name || body.username.trim();
+  return {
+    token: signAdminToken(username, memberSessionSecret, MEMBER_SESSION_TTL),
+    expires_in: MEMBER_SESSION_TTL,
+    username
+  };
+});
 
-  if (!user) {
-    return {
-      registered: false,
-      order: serializeOrder(payment)
-    };
+// Password change, exactly like Jellyfin's own apps: current password is
+// required and both passwords are forwarded once for verification.
+app.post("/pay/api/session/password", { config: { rateLimit: { max: 5, timeWindow: "5 minutes" } } }, async (request, reply) => {
+  const body = z
+    .object({
+      session: z.string().min(16).max(512),
+      current_password: z.string().min(1).max(128),
+      new_password: z.string().min(8).max(128)
+    })
+    .parse(request.body);
+  const claims = verifyAdminToken(body.session, memberSessionSecret);
+  if (!claims?.sub) return reply.code(401).send({ error: "unauthorized" });
+  const result = await changeJellyfinPassword(claims.sub, body.current_password, body.new_password);
+  if (!result.ok) {
+    if (result.reason === "unavailable") return reply.code(503).send({ error: "login_unavailable" });
+    return reply.code(401).send({ error: "invalid_credentials" });
   }
+  return { ok: true };
+});
 
-  const subscriptions = await prisma.subscription.findMany({
-    where: { userId: user.id },
-    orderBy: { expiresAt: "desc" }
-  });
+async function buildDashboard(user: { id: string; jellyfinUsername: string } | null, username: string, maskName: boolean) {
+  const subscriptions = user
+    ? await prisma.subscription.findMany({ where: { userId: user.id }, orderBy: { expiresAt: "desc" } })
+    : [];
   const latest = subscriptions[0] || null;
   const now = new Date();
 
   // Live member data from jfa-go (same source as its "My Account" page).
   // The media server's expiry is authoritative — e.g. after manual admin
   // changes — and falls back to the portal's subscription records.
-  const live = await getJellyfinUserInfo(user.jellyfinUsername).catch(() => null);
+  const live = await getJellyfinUserInfo(username).catch(() => null);
   const expiresAt = live?.expiresAt || latest?.expiresAt || null;
   const active = live?.disabled ? false : Boolean(expiresAt && expiresAt > now);
-  const history = await prisma.payment.findMany({
-    where: { OR: [{ userId: user.id }, { user: user.jellyfinUsername }] },
-    orderBy: { createdAt: "desc" },
-    take: 12
-  });
+  const history = user
+    ? await prisma.payment.findMany({
+        where: { OR: [{ userId: user.id }, { user: { equals: username, mode: "insensitive" } }] },
+        orderBy: { createdAt: "desc" },
+        take: 12
+      })
+    : [];
 
-  const name = user.jellyfinUsername;
-  const masked = name.length <= 3 ? `${name[0]}**` : `${name.slice(0, 2)}${"*".repeat(Math.min(6, name.length - 3))}${name.slice(-1)}`;
+  const masked =
+    username.length <= 3
+      ? `${username[0]}**`
+      : `${username.slice(0, 2)}${"*".repeat(Math.min(6, username.length - 3))}${username.slice(-1)}`;
 
   return {
     registered: true,
-    username_masked: masked,
+    username_masked: maskName ? masked : username,
     active,
     expires_at: expiresAt?.toISOString() || null,
     expiry_source: live?.expiresAt ? "server" : "portal",
@@ -408,6 +435,42 @@ app.post("/pay/api/dashboard", { config: { rateLimit: { max: 10, timeWindow: "1 
       provision_state: item.provisionState
     }))
   };
+}
+
+app.post("/pay/api/dashboard", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const body = z
+    .object({
+      token: z.string().min(16).max(128).optional(),
+      session: z.string().min(16).max(512).optional()
+    })
+    .parse(request.body);
+
+  // Path 1: member session (Jellyfin-credential login) — full username shown.
+  if (body.session) {
+    const claims = verifyAdminToken(body.session, memberSessionSecret);
+    if (!claims?.sub) return reply.code(401).send({ error: "unauthorized" });
+    const user = await prisma.user.findFirst({
+      where: { jellyfinUsername: { equals: claims.sub, mode: "insensitive" } }
+    });
+    return buildDashboard(user, user?.jellyfinUsername || claims.sub, false);
+  }
+
+  // Path 2: claim token from an order (works before registration too).
+  if (!body.token) return reply.code(400).send({ error: "token or session required" });
+  const tokenHash = sha256(body.token);
+  const payment = await prisma.payment.findFirst({ where: { claimTokenHash: tokenHash } });
+  if (!payment) return reply.code(404).send({ error: "not found" });
+
+  const user = payment.userId
+    ? await prisma.user.findUnique({ where: { id: payment.userId } })
+    : payment.user
+      ? await prisma.user.findUnique({ where: { jellyfinUsername: payment.user } })
+      : null;
+
+  if (!user) {
+    return { registered: false, order: serializeOrder(payment) };
+  }
+  return buildDashboard(user, user.jellyfinUsername, true);
 });
 
 app.post("/api/webhooks/nowpayments", async (request, reply) => {
