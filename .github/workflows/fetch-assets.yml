@@ -1,0 +1,31 @@
+name: Fetch Higgsfield artwork
+
+# The Higgsfield CDN is unreachable from some build sandboxes, so this
+# workflow downloads and optimizes the artwork on GitHub's runners and
+# commits the WebP files to the branch it was dispatched on.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install sharp for WebP conversion
+        run: npm install --no-save --no-audit --no-fund sharp
+      - name: Download and optimize artwork
+        run: node web/scripts/fetch-assets.mjs
+      - name: Commit assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/public/assets
+          git diff --cached --quiet && echo "nothing to commit" && exit 0
+          git commit -m "Add Higgsfield cinematic artwork (WebP, fetched via CI)"
+          git push
