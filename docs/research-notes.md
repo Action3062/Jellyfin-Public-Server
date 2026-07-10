@@ -19,13 +19,17 @@ published plugin/SDK source).
   `months/days/hours/minutes`). Success is **HTTP 204 with an empty body** — do not call
   `res.json()` unconditionally. The route `POST /users/{username}/expiry` used by an earlier
   revision **does not exist**.
-- **Create invite**: `POST /invites` with hyphenated keys
-  (`"user-expiry"`, `"user-months"`, `"user-days"`, `"multiple-uses"`, `"remaining-uses"`) plus
+- **Create account directly**: `POST /user` with `{username, password, profile?}` (admin route;
+  applies the named/default profile) — this is what the portal's own `/register` page uses, so
+  customers never see jfa-go's UI. It does **not** set an expiry; follow up with
+  `POST /users/extend`. Note: the user cache behind `GET /users` can lag briefly after creation,
+  so the expiry call is retried.
+- **Invites** (documented but no longer used in the customer flow): `POST /invites` with
+  hyphenated keys (`"user-expiry"`, `"user-months"`, `"multiple-uses"`, `"remaining-uses"`) plus
   `profile`, `label`, `user_label`. The response is only `{"success": true}` — the generated code
-  is **not returned**; set a unique `label` (we use the order id) and recover the code from
-  `GET /invites` (note: underscore keys there, `used_by` maps username → Unix seconds, response is
-  `{"invites": null}` when empty, expired invites are purged server-side). Registration URL:
-  `{external jfa-go URL}/invite/{code}`.
+  is **not returned**; recover it from `GET /invites` by unique label (underscore keys there,
+  `used_by` maps username → Unix seconds, `{"invites": null}` when empty, expired invites purged
+  server-side).
 - **Apply profile to existing users**: `POST /users/settings` (`from: "profile"`); the expiry DTO
   has no profile field.
 

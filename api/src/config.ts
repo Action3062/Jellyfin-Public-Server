@@ -19,14 +19,11 @@ const schema = z
     JFA_GO_BASE_URL: z.string().url().default("http://jfa-go:8056"),
     JFA_GO_USERNAME: z.string().default(""),
     JFA_GO_PASSWORD: z.string().default(""),
-    // Public URL of the jfa-go instance used to build invite links shown to
-    // customers (falls back to JFA_GO_BASE_URL, which is usually internal).
-    JFA_GO_EXTERNAL_URL: z.string().default(""),
     JFA_GO_DEFAULT_PROFILE: z.string().default(""),
-    // How long a post-payment registration invite stays valid.
-    INVITE_VALIDITY_DAYS: z.coerce.number().int().min(1).default(7),
     JELLYFIN_BASE_URL: z.string().default(""),
     JELLYFIN_API_KEY: z.string().default(""),
+    // Customer-facing Jellyfin URL, shown as "log in now" after registration.
+    JELLYFIN_PUBLIC_URL: z.string().default(""),
     PLEX_TOKEN: z.string().default(""),
     PLEX_SERVER_NAME: z.string().default(""),
     DATABASE_URL: z.string().default("postgres://postgres:postgres@localhost:5432/payment_portal"),

@@ -96,7 +96,7 @@ test.describe("crypto checkout", () => {
     await expect(page.locator(".history-table tr")).toHaveCount(1);
   });
 
-  test("new member: pay and receive a registration invite link", async ({ page, context }) => {
+  test("new member: pay, register on the portal page, land in an active dashboard", async ({ page, context }) => {
     await page.goto("/pay?plan=hd_1m");
     await page.getByRole("radio", { name: /Ich bin neu hier/ }).click();
     await expect(page.getByText(/Einladungslink/).first()).toBeVisible();
@@ -111,13 +111,20 @@ test.describe("crypto checkout", () => {
     await page.reload();
 
     await expect(page.getByTestId("step-payment")).toContainText("Zahlung bestätigt");
-    const invite = page.getByTestId("invite-link");
-    await expect(invite).toBeVisible();
-    await expect(invite).toHaveAttribute("href", new RegExp(`/invite/mock-${orderId}`));
+    await page.getByTestId("register-link").click();
+    await expect(page).toHaveURL(new RegExp(`/register/${orderId}`));
 
-    // Dashboard reports the registration as still pending.
+    // Portal-hosted registration — jfa-go's own UI is never shown.
+    const username = uniqueUser("newbie");
+    await page.getByLabel(/Wunsch-Benutzername/).fill(username);
+    await expect(page.locator(".hint.ok")).toBeVisible();
+    await page.getByLabel("Passwort", { exact: true }).fill("super-secret-pass");
+    await page.getByLabel(/Passwort wiederholen/).fill("super-secret-pass");
+    await page.getByTestId("register-submit").click();
+
+    await expect(page.getByTestId("register-success")).toContainText(username);
     await page.getByRole("link", { name: "Zum Dashboard" }).click();
-    await expect(page.getByTestId("dashboard-unregistered")).toContainText("Registrierung");
+    await expect(page.getByTestId("dashboard-status")).toContainText("Aktiv");
   });
 
   test("mock invoice page can drive the payment to finished while the order page polls", async ({ page, context }) => {
@@ -165,7 +172,7 @@ test.describe("azteco checkout", () => {
     await expect(page.getByTestId("step-activation")).toContainText("Dein Zugang ist aktiv");
   });
 
-  test("new member sees only one voucher field and gets an invite", async ({ page }) => {
+  test("new member sees only one voucher field and can register right away", async ({ page }) => {
     await page.goto("/pay");
     await page.getByRole("button", { name: /Azteco/ }).click();
     await page.getByRole("radio", { name: /Ich bin neu hier/ }).click();
@@ -174,7 +181,14 @@ test.describe("azteco checkout", () => {
     await page.getByLabel(/Gutschein-Code 1/).fill(uniqueVoucher("02")); // mock: €75
     await page.getByRole("button", { name: /Einlösen & Aktivieren/ }).click();
     await expect(page).toHaveURL(/\/order\/az_/);
-    await expect(page.getByTestId("invite-link")).toBeVisible();
+    await page.getByTestId("register-link").click();
+
+    const username = uniqueUser("voucher");
+    await page.getByLabel(/Wunsch-Benutzername/).fill(username);
+    await page.getByLabel("Passwort", { exact: true }).fill("super-secret-pass");
+    await page.getByLabel(/Passwort wiederholen/).fill("super-secret-pass");
+    await page.getByTestId("register-submit").click();
+    await expect(page.getByTestId("register-success")).toContainText(username);
   });
 });
 

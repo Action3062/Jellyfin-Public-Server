@@ -88,8 +88,6 @@ model Payment {
   plexState      PlexState      @default(none) @map("plex_state")
   claimTokenHash String?        @map("claim_token_hash")
   invoiceUrl     String?        @map("invoice_url")
-  inviteCode     String?        @map("invite_code")
-  inviteUrl      String?        @map("invite_url")
   provisionState ProvisionState @default(pending) @map("provision_state")
   provisionedAt  DateTime?      @map("provisioned_at")
   product        String

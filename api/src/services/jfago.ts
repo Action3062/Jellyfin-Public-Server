@@ -99,70 +99,49 @@ export async function extendJellyfinExpiry(username: string, expiresAt: Date): P
   return { ok: true, userId: user.id };
 }
 
-export type RegistrationInvite = { code: string; url: string };
+export class UsernameTakenError extends Error {}
 
-function inviteBaseUrl(): string {
-  const base = config.JFA_GO_EXTERNAL_URL || config.JFA_GO_BASE_URL;
-  return base.replace(/\/$/, "");
+/**
+ * Whether a username is available for registration. In mock mode every
+ * plausible name is free so local/e2e flows can complete.
+ */
+export async function isUsernameAvailable(username: string): Promise<boolean> {
+  if (!jfaGoConfigured) return username.length >= 3;
+  return !(await findJellyfinUser(username));
 }
 
 /**
- * Create a single-use registration invite whose created account already
- * carries the purchased duration as user expiry. `label` must be unique
- * (we use the order id) because POST /invites does not return the code —
- * it is recovered from GET /invites by label.
+ * Create a Jellyfin account directly through jfa-go (POST /user), applying
+ * the configured default profile. Registration is rendered by OUR portal —
+ * customers never see jfa-go's own UI. The password is forwarded to jfa-go
+ * over the internal network and never persisted here. Note: POST /user does
+ * not set an expiry; callers follow up with extendJellyfinExpiry.
  */
-export async function createRegistrationInvite(input: {
-  label: string;
-  userMonths?: number;
-  userDays?: number;
-}): Promise<RegistrationInvite> {
-  if (!jfaGoConfigured) {
-    const code = `mock-${input.label}`;
-    return { code, url: `${inviteBaseUrl()}/invite/${code}` };
-  }
-  await jfaFetch("/invites", {
+export async function createJellyfinUser(input: { username: string; password: string }): Promise<{ mock?: boolean }> {
+  if (!jfaGoConfigured) return { mock: true };
+  const token = await getToken();
+  const res = await fetch(`${config.JFA_GO_BASE_URL}/user`, {
     method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({
-      days: config.INVITE_VALIDITY_DAYS,
-      months: 0,
-      hours: 0,
-      minutes: 0,
-      "user-expiry": true,
-      "user-months": input.userMonths || 0,
-      "user-days": input.userDays || 0,
-      "user-hours": 0,
-      "user-minutes": 0,
-      "multiple-uses": false,
-      "no-limit": false,
-      "remaining-uses": 1,
-      profile: config.JFA_GO_DEFAULT_PROFILE || undefined,
-      label: input.label,
-      user_label: input.label
+      username: input.username,
+      password: input.password,
+      profile: config.JFA_GO_DEFAULT_PROFILE || undefined
     })
   });
-  const data = (await jfaFetch("/invites")) as { invites?: Array<{ code: string; label?: string }> } | null;
-  const invite = (data?.invites || []).find((item) => item.label === input.label);
-  if (!invite) throw new Error(`jfa-go invite created but not found by label ${input.label}`);
-  return { code: invite.code, url: `${inviteBaseUrl()}/invite/${invite.code}` };
-}
-
-/**
- * Look up whether an invite has been used and by which username.
- * Expired invites are purged by jfa-go, so a missing invite after its
- * validity window with no recorded use means the invite lapsed.
- */
-export async function getInviteUsage(
-  code: string,
-  label: string
-): Promise<{ usedBy: string | null; usedAt: Date | null; missing: boolean }> {
-  if (!jfaGoConfigured) return { usedBy: null, usedAt: null, missing: false };
-  const data = (await jfaFetch("/invites")) as {
-    invites?: Array<{ code: string; label?: string; used_by?: Record<string, number> }>;
-  } | null;
-  const invite = (data?.invites || []).find((item) => item.code === code || item.label === label);
-  if (!invite) return { usedBy: null, usedAt: null, missing: true };
-  const [entry] = Object.entries(invite.used_by || {});
-  if (!entry) return { usedBy: null, usedAt: null, missing: false };
-  return { usedBy: entry[0], usedAt: new Date(entry[1] * 1000), missing: false };
+  if (res.ok) return {};
+  let message = "";
+  try {
+    message = ((await res.json()) as { error?: string }).error || "";
+  } catch {
+    /* non-JSON error body */
+  }
+  if (res.status === 401) {
+    cachedToken = null;
+    throw new Error("jfa-go create user unauthorized");
+  }
+  if (res.status === 409 || /exist|taken|already/i.test(message)) {
+    throw new UsernameTakenError(message || "username taken");
+  }
+  throw new Error(`jfa-go create user failed: ${res.status}${message ? ` ${message}` : ""}`);
 }

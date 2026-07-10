@@ -726,6 +726,13 @@ button.choice:hover { transform: translateY(-1px); }
 .claim-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .claim-actions .btn-primary, .claim-actions .btn-ghost { height: 42px; font-size: 14px; }
 
+/* ---------- Registration ---------- */
+
+.register-success { text-align: center; display: grid; gap: 10px; justify-items: center; }
+.register-success-icon { color: var(--accent); }
+.register-success h2 { margin: 0; font-size: 22px; }
+.register-success .claim-actions { justify-content: center; }
+
 /* ---------- Dashboard ---------- */
 
 .status-card { display: grid; gap: 18px; }

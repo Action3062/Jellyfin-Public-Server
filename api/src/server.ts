@@ -10,9 +10,9 @@ import { config } from "./config.js";
 import { aztecoOptions, defaultPlans, findPlan, supportedCoins } from "./data/defaults.js";
 import { sha256, timingSafeEqual } from "./lib/hash.js";
 import { createAztecoClient } from "./services/azteco.js";
-import { checkJellyfinUser } from "./services/jfago.js";
+import { checkJellyfinUser, isUsernameAvailable, UsernameTakenError } from "./services/jfago.js";
 import { createNowPaymentsInvoice, getNowPaymentsStatus, verifyNowPaymentsIpn } from "./services/nowpayments.js";
-import { fulfillPayment, reconcileRegistration } from "./services/provisioning.js";
+import { fulfillPayment, registerNewAccount } from "./services/provisioning.js";
 
 const prisma = new PrismaClient();
 
@@ -102,7 +102,6 @@ function serializeOrder(payment: Payment) {
       : { id: payment.planId || payment.product, label_de: payment.product, label_en: payment.product, months: payment.months || 0 },
     days: payment.days,
     invoice_url: payment.invoiceUrl,
-    invite_url: payment.inviteUrl,
     plex_state: payment.plexState,
     provisioned_at: payment.provisionedAt?.toISOString() || null,
     created_at: payment.createdAt.toISOString()
@@ -212,14 +211,46 @@ app.get("/pay/api/order/:orderId", { config: { rateLimit: { max: 30, timeWindow:
         where: { id: payment.id },
         data: { status: remote.payment_status }
       });
-      if (SUCCESS_STATUSES.has(remote.payment_status)) await scheduleFulfillment(payment.orderId);
+      if (SUCCESS_STATUSES.has(remote.payment_status)) {
+        await scheduleFulfillment(payment.orderId);
+        payment = (await prisma.payment.findUnique({ where: { orderId: payment.orderId } })) || payment;
+      }
     }
   }
 
-  if (payment.provisionState === "awaiting_registration") {
-    payment = await reconcileRegistration(prisma, payment);
-  }
   return serializeOrder(payment);
+});
+
+app.post("/pay/api/register/check", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request) => {
+  const body = z.object({ username: z.string().min(1).max(80) }).parse(request.body);
+  return { available: await isUsernameAvailable(body.username.trim()) };
+});
+
+// Portal-hosted registration for paid new-account orders: the customer
+// picks name & password on OUR page; jfa-go stays entirely backstage.
+app.post("/pay/api/register", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const body = z
+    .object({
+      order_id: z.string().min(4).max(64),
+      claim_token: z.string().min(16).max(128),
+      username: z.string().regex(/^[A-Za-z0-9._-]{3,32}$/, "username must be 3-32 chars (letters, digits, . _ -)"),
+      password: z.string().min(8).max(128)
+    })
+    .parse(request.body);
+
+  const payment = await findAuthorizedPayment(body.order_id, body.claim_token);
+  if (!payment) return reply.code(404).send({ error: "not found" });
+  if (payment.accountMode !== "new") return reply.code(409).send({ error: "order has no pending registration" });
+  if (payment.provisionState === "provisioned") return reply.code(409).send({ error: "already registered" });
+  if (!SUCCESS_STATUSES.has(payment.status)) return reply.code(409).send({ error: "payment not completed yet" });
+
+  try {
+    await registerNewAccount(prisma, payment, { username: body.username.trim(), password: body.password });
+  } catch (error) {
+    if (error instanceof UsernameTakenError) return reply.code(409).send({ error: "username taken" });
+    throw error;
+  }
+  return { ok: true, username: body.username.trim(), jellyfin_url: config.JELLYFIN_PUBLIC_URL || null };
 });
 
 app.post("/pay/api/azteco/redeem", { config: { rateLimit: { max: 8, timeWindow: "10 minutes" } } }, async (request, reply) => {
@@ -299,29 +330,23 @@ app.post("/pay/api/azteco/redeem", { config: { rateLimit: { max: 8, timeWindow: 
     }
   });
 
-  // Azteco redemption is synchronous — fulfill inline so new customers get
-  // their invite link in the response; the queue is the retry safety net.
-  let inviteUrl: string | null = null;
+  // Azteco redemption is synchronous — fulfill inline so existing accounts
+  // are extended before the response; the queue is the retry safety net.
   try {
-    const fulfilled = await fulfillPayment(prisma, orderId);
-    inviteUrl = fulfilled?.inviteUrl || null;
+    await fulfillPayment(prisma, orderId);
   } catch (error) {
     app.log.error({ err: error, orderId }, "inline azteco fulfillment failed, scheduling retry");
     await scheduleFulfillment(orderId);
   }
 
-  return { value_eur: result.value_eur, order_id: orderId, claim_token: claimToken, invite_url: inviteUrl };
+  return { value_eur: result.value_eur, order_id: orderId, claim_token: claimToken };
 });
 
 app.post("/pay/api/dashboard", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
   const body = z.object({ token: z.string().min(16).max(128) }).parse(request.body);
   const tokenHash = sha256(body.token);
-  let payment = await prisma.payment.findFirst({ where: { claimTokenHash: tokenHash } });
+  const payment = await prisma.payment.findFirst({ where: { claimTokenHash: tokenHash } });
   if (!payment) return reply.code(404).send({ error: "not found" });
-
-  if (payment.provisionState === "awaiting_registration") {
-    payment = await reconcileRegistration(prisma, payment);
-  }
 
   const user = payment.userId
     ? await prisma.user.findUnique({ where: { id: payment.userId } })

@@ -1,6 +1,6 @@
 import type { Payment, PrismaClient } from "@prisma/client";
 import { addDays, addMonths, laterOf } from "../lib/expiry.js";
-import { createRegistrationInvite, extendJellyfinExpiry, getInviteUsage } from "./jfago.js";
+import { createJellyfinUser, extendJellyfinExpiry, isUsernameAvailable, UsernameTakenError } from "./jfago.js";
 import { invitePlexUser } from "./plex.js";
 
 /**
@@ -44,9 +44,10 @@ async function fulfillPlex(prisma: PrismaClient, payment: Payment): Promise<void
 }
 
 /**
- * Fulfill a paid order. For existing accounts this extends the Jellyfin
- * expiry; for new accounts it creates a single-use jfa-go invite that
- * already carries the purchased duration as user expiry.
+ * Fulfill a paid order. Existing accounts get their Jellyfin expiry
+ * extended immediately; new-account orders are parked in
+ * `awaiting_registration` until the customer completes the portal's own
+ * registration form (registerNewAccount below).
  */
 export async function fulfillPayment(prisma: PrismaClient, orderId: string): Promise<Payment | null> {
   const payment = await prisma.payment.findUnique({ where: { orderId } });
@@ -59,14 +60,9 @@ export async function fulfillPayment(prisma: PrismaClient, orderId: string): Pro
 
   try {
     if (payment.accountMode === "new") {
-      const invite = await createRegistrationInvite({
-        label: payment.orderId,
-        userMonths: payment.months || 0,
-        userDays: payment.days || 0
-      });
       await prisma.payment.update({
         where: { id: payment.id },
-        data: { inviteCode: invite.code, inviteUrl: invite.url, provisionState: "awaiting_registration" }
+        data: { provisionState: "awaiting_registration" }
       });
     } else {
       if (!payment.user) throw new Error(`payment ${payment.orderId} has no username to provision`);
@@ -93,37 +89,69 @@ export async function fulfillPayment(prisma: PrismaClient, orderId: string): Pro
 }
 
 /**
- * Lazy reconciliation for new-account orders: once the customer has used
- * their invite on jfa-go, backfill the portal User + Subscription so the
- * dashboard and renewals work. Called from the order/dashboard endpoints,
- * so no extra scheduler is needed.
+ * Complete a new-account order through the portal's own registration form:
+ * create the Jellyfin account via jfa-go, stamp the purchased duration as
+ * expiry, and backfill the portal User + Subscription. Throws
+ * UsernameTakenError when the requested name is unavailable.
  */
-export async function reconcileRegistration(prisma: PrismaClient, payment: Payment): Promise<Payment> {
-  if (payment.provisionState !== "awaiting_registration" || !payment.inviteCode) return payment;
-  const usage = await getInviteUsage(payment.inviteCode, payment.orderId).catch(() => null);
-  if (!usage?.usedBy) return payment;
+export async function registerNewAccount(
+  prisma: PrismaClient,
+  payment: Payment,
+  input: { username: string; password: string }
+): Promise<Payment> {
+  if (payment.status !== "finished" || payment.accountMode !== "new") {
+    throw new Error("order is not awaiting registration");
+  }
+  if (payment.provisionState === "provisioned") {
+    throw new UsernameTakenError("order already registered");
+  }
 
-  const usedAt = usage.usedAt || new Date();
-  const expiresAt = payment.months ? addMonths(usedAt, payment.months) : addDays(usedAt, payment.days || 0);
+  if (!(await isUsernameAvailable(input.username))) {
+    throw new UsernameTakenError("username taken");
+  }
+  await createJellyfinUser(input);
+
+  const now = new Date();
+  const expiresAt = payment.months ? addMonths(now, payment.months) : addDays(now, payment.days || 0);
+
+  // The user list behind /users/extend may lag briefly after creation, so
+  // retry a few times. If it still fails, keep the account (customer paid
+  // and can watch) and log loudly — the missing expiry is visible in
+  // jfa-go's admin Accounts view.
+  let expiryError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await extendJellyfinExpiry(input.username, expiresAt);
+      expiryError = null;
+      break;
+    } catch (error) {
+      expiryError = error;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  if (expiryError) {
+    console.error(`registerNewAccount: expiry could not be set for ${input.username}`, expiryError);
+  }
+
   const user = await prisma.user.upsert({
-    where: { jellyfinUsername: usage.usedBy },
+    where: { jellyfinUsername: input.username },
     update: {},
-    create: { jellyfinUsername: usage.usedBy }
+    create: { jellyfinUsername: input.username }
   });
   await prisma.subscription.create({
     data: {
       userId: user.id,
       plan: payment.planId || payment.product,
       source: payment.provider,
-      startsAt: usedAt,
+      startsAt: now,
       expiresAt,
       status: "active"
     }
   });
   const updated = await prisma.payment.update({
     where: { id: payment.id },
-    data: { user: usage.usedBy, userId: user.id, provisionState: "provisioned", provisionedAt: usedAt }
+    data: { user: input.username, userId: user.id, provisionState: "provisioned", provisionedAt: now }
   });
   await fulfillPlex(prisma, updated);
-  return updated;
+  return prisma.payment.findUnique({ where: { orderId: payment.orderId } }) as Promise<Payment>;
 }

@@ -19,7 +19,8 @@ export default function DatenschutzPage() {
           </p>
           <p className="hint">
             Gespeichert werden ausschließlich: Jellyfin-Benutzername (bzw. ein anonymer Bestellschlüssel), Zahlungsstatus und
-            Laufzeit des Zugangs. Kryptozahlungen werden durch NOWPayments abgewickelt, Gutschein-Käufe durch Azteco — es
+            Laufzeit des Zugangs. Das bei der Registrierung gewählte Passwort wird direkt an den Medienserver übertragen und
+            nicht bei uns gespeichert. Kryptozahlungen werden durch NOWPayments abgewickelt, Gutschein-Käufe durch Azteco — es
             gelten deren Datenschutzbestimmungen. Die Spracheinstellung wird lokal im Browser gespeichert (localStorage).
           </p>
           <p className="hint">

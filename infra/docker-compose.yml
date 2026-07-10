@@ -66,10 +66,9 @@ services:
     volumes:
       - jfa_go_data:/data
     restart: unless-stopped
-    # Customers need the jfa-go registration form (invite links), so bind to
-    # localhost and publish it through your reverse proxy / TLS terminator as
-    # JFA_GO_EXTERNAL_URL. Never expose 0.0.0.0:8056 directly — the same port
-    # serves the admin API.
+    # Backend-only: customers register on the portal's own /register page,
+    # so jfa-go needs no public exposure. The localhost binding exists purely
+    # for the OPERATOR's admin UI (initial setup, profiles, account overview).
     ports:
       - "127.0.0.1:8056:8056"
     networks:

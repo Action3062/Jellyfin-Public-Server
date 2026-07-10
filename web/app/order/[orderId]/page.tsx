@@ -20,7 +20,6 @@ type Order = {
   plan: { id: string; label_de: string; label_en: string; months: number };
   days: number | null;
   invoice_url: string | null;
-  invite_url: string | null;
   plex_state: "none" | "pending" | "invited" | "failed";
   provisioned_at: string | null;
 };
@@ -167,12 +166,10 @@ export default function OrderPage() {
                 ) : order.provision_state === "awaiting_registration" ? (
                   <>
                     <p>{t("order.provision.awaiting")}</p>
-                    {order.invite_url && (
-                      <a className="btn-primary" href={order.invite_url} target="_blank" rel="noreferrer" data-testid="invite-link">
-                        {t("order.invite.open")} <ExternalLink size={14} aria-hidden />
-                      </a>
-                    )}
-                    <p className="hint">{t("order.invite.hint")}</p>
+                    <Link className="btn-primary" href={`/register/${orderId}#t=${token}`} data-testid="register-link">
+                      {t("order.register.open")}
+                    </Link>
+                    <p className="hint">{t("order.register.hint")}</p>
                   </>
                 ) : order.provision_state === "failed" ? (
                   <p>{t("order.provision.failed")}</p>
