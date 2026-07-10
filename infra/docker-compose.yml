@@ -46,7 +46,10 @@ services:
     depends_on:
       - postgres
       - redis
+    # `default` keeps the legacy infra_default network alive so external
+    # containers (Discord bot) that joined it keep reaching http://api:4000.
     networks:
+      - default
       - edge
       - backend
 
@@ -86,6 +89,7 @@ services:
       - backend
 
 networks:
+  default:
   edge:
   backend:
     internal: true
