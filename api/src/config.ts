@@ -6,7 +6,7 @@ const schema = z
     PORT: z.coerce.number().default(4000),
     PUBLIC_BASE_URL: z.string().url().default("http://localhost:3000"),
     API_PUBLIC_BASE_URL: z.string().url().default("http://localhost:4000"),
-    SHOP_NAME: z.string().default("Arkiv3"),
+    SHOP_NAME: z.string().default("Byteflix"),
     SHOP_DISCORD_URL: z.string().default(""),
     NOWPAYMENTS_API_KEY: z.string().default(""),
     NOWPAYMENTS_IPN_SECRET: z.string().default(""),

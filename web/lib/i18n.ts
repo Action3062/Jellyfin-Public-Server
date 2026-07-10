@@ -1,6 +1,6 @@
 export type Lang = "de" | "en";
 
-export const LANG_STORAGE_KEY = "arkiv3-pay-lang";
+export const LANG_STORAGE_KEY = "byteflix-lang";
 
 const de = {
   // Shared chrome

@@ -17,7 +17,7 @@ const apiEnv = {
   NOWPAYMENTS_IPN_SECRET: "",
   JFA_GO_USERNAME: "",
   JFA_GO_PASSWORD: "",
-  SHOP_NAME: "Arkiv3"
+  SHOP_NAME: "Byteflix"
 };
 
 export default defineConfig({
@@ -55,7 +55,7 @@ export default defineConfig({
       env: {
         ...process.env,
         API_URL: "http://127.0.0.1:4000",
-        NEXT_PUBLIC_SHOP_NAME: "Arkiv3"
+        NEXT_PUBLIC_SHOP_NAME: "Byteflix"
       }
     }
   ]

@@ -10,7 +10,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./
 COPY web ./web
 ARG API_URL=http://api:4000
-ARG NEXT_PUBLIC_SHOP_NAME="Arkiv3"
+ARG NEXT_PUBLIC_SHOP_NAME="Byteflix"
 ARG NEXT_PUBLIC_SHOP_DISCORD_URL=""
 ENV API_URL=$API_URL
 ENV NEXT_PUBLIC_SHOP_NAME=$NEXT_PUBLIC_SHOP_NAME

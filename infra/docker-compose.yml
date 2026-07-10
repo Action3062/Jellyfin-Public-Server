@@ -5,11 +5,11 @@ services:
       dockerfile: infra/web.Dockerfile
       args:
         API_URL: http://api:4000
-        NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-Arkiv3}
+        NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-Byteflix}
         NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-}
     environment:
       API_URL: http://api:4000
-      NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-Arkiv3}
+      NEXT_PUBLIC_SHOP_NAME: ${SHOP_NAME:-Byteflix}
       NEXT_PUBLIC_SHOP_DISCORD_URL: ${SHOP_DISCORD_URL:-}
     ports:
       - "3000:3000"
